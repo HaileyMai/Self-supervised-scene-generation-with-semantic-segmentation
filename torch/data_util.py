@@ -57,7 +57,7 @@ def dense_to_sparse_np(grid, thresh):
     locs = np.stack(locs)
     return locs, values
 
-def load_sdf(file, load_sparse, load_known, load_colors, is_sparse_file=True, color_file=None):
+def load_sdf(file, load_sparse, load_known, load_colors, is_sparse_file=True, color_file=None, load_semantics=False):
     #assert os.path.isfile(file)
     assert (not load_sparse and not load_known) or (load_sparse != load_known)
     try:
@@ -126,7 +126,15 @@ def load_sdf(file, load_sparse, load_known, load_colors, is_sparse_file=True, co
             assert num_color == dimx * dimy * dimz
             colors = struct.unpack('B'*num_color*3, fin.read(num_color*3))
             colors = np.asarray(colors, dtype=np.uint8).reshape([dimz, dimy, dimx, 3])
+    if load_semantics: #TODO hack for now
+        num_semantics = dimx * dimy * dimz
+        semantics = struct.unpack('B'*num_semantics, fin.read(num_semantics))
+        semantics = np.asarray(semantics, dtype=np.uint8).reshape([dimz, dimy, dimx])
+        fin.close()
+    
+        return [locs, sdf], [dimz, dimy, dimx], world2grid, known, colors, semantics
     fin.close()
+
     if load_sparse:
         return [locs, sdf], [dimz, dimy, dimx], world2grid, known, colors
     else:
