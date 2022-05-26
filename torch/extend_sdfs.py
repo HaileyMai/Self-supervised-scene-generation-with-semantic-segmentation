@@ -41,15 +41,14 @@ mapping = dict(zip(mapping_table[args.raw_category], mapping_table[args.category
 seg_dir = path.join(args.seg_path, "v1", "scans")
 
 for segmentation in listdir(seg_dir):
-    zip_path = path.join(seg_dir, segmentation, "region_segmentations.zip")
-    if not path.exists(zip_path):
-        print(f"{segmentation} does not contain a region_segmentations.zip")
-        continue
-    
     unzip_path = path.join(seg_dir, segmentation)
     if path.exists(path.join(unzip_path, segmentation)):
-        print(f"{segmentation}: already unzipped")
+        print(f"{segmentation}: already unzipped, extracting semantics...")
     else:
+        zip_path = path.join(seg_dir, segmentation, "region_segmentations.zip")
+        if not path.exists(zip_path):
+            print(f"{segmentation} does not contain a region_segmentations.zip")
+            continue
         with zipfile.ZipFile(zip_path, "r") as zip_ref:
             zip_ref.extractall(unzip_path)
         print(f"{segmentation}: extracted region_segmentations")
@@ -69,7 +68,7 @@ for segmentation in listdir(seg_dir):
 
         center_sems = []
         for i in range(faces.count):
-            face_vertices, _, object_id, _ = faces.data[i]
+            face_vertices, _, object_id, category_id = faces.data[i]
             face_vertices = [vertices[i] for i in face_vertices]
             
             #calculate center of face
@@ -128,6 +127,7 @@ for segmentation in listdir(seg_dir):
                     o.write(dense_sem.tobytes())
             
             sdf_number += 1
-            
 
         region += 1
+
+    print("Done.")
