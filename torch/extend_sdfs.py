@@ -101,14 +101,14 @@ for segmentation in listdir(seg_dir):
         while path.exists(sdf_base + str(sdf_number) + ".sdf"):
             #print(f"--sdf {sdf_number}")
             sdf_path = sdf_base + str(sdf_number) + ".sdf"
-            [locs, sdf], [dimz, dimy, dimx], world2grid, known, colors = data_util.load_sdf(sdf_path, True, False, True)
+            [locs, sdf], [dimz, dimy, dimx], world2grid, known, colors, voxelsize = data_util.load_sdf(sdf_path, True, False, True, return_voxelsize=True)
             
             points = point_sems.copy()
 
             x = np.ones((points.shape[0], 4))
             x[:, :3] = points[:, :3]
             x = np.matmul(world2grid, np.transpose(x))
-            x = np.transpose(x)
+            x = np.transpose(x) / voxelsize
             x = np.divide(x[:, :3], x[:, 3, None])
             x = np.rint(x)
 
