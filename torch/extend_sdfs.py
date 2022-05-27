@@ -10,16 +10,18 @@ import argparse
 import zipfile
 
 """
-First run download-mp.py -o [output_dir] --type .region_segmentations
+First run download-mp.py -o [output_dir] --type region_segmentations
 Category mapping should be taken from https://github.com/niessner/Matterport/blob/master/metadata/category_mapping.tsv
+
+Ex.: extend_sdfs.py --seg_path ../../region_segmentations --mapping ../../Matterport/metadata/category_mapping.tsv --sdf_path ../../data --output_dir ../../data_extended
 """
 
 #TODO
-#coordinates are not in XYZ form but in ZYX -> refactor
 #add option to delete unzipped files at the end
 #change the data_util.load_sdf extension to a not so hacky one
-#test for the occupancy of semantics on the grid 
-#-> if it seems to sparse, could use interpolation or more points for every face (also corners not just center, ..)
+#test for the occupancy and correctness of semantics on the grid 
+#-> it is possible to add arbitrarily many points for every face
+#--force parameter for overwriting output files
 
 parser = argparse.ArgumentParser()
 
@@ -66,15 +68,15 @@ for segmentation in listdir(seg_dir):
         vertices = data.elements[0]
         faces = data.elements[1]
 
-        center_sems = []
+        point_sems = []
         for i in range(faces.count):
             face_vertices, _, object_id, category_id = faces.data[i]
             face_vertices = [vertices[i] for i in face_vertices]
             
             #calculate center of face
-            x = (face_vertices[0]["x"] + face_vertices[1]["x"] + face_vertices[2]["x"]) / 3
-            y = (face_vertices[0]["y"] + face_vertices[1]["y"] + face_vertices[2]["y"]) / 3
             z = (face_vertices[0]["z"] + face_vertices[1]["z"] + face_vertices[2]["z"]) / 3
+            y = (face_vertices[0]["y"] + face_vertices[1]["y"] + face_vertices[2]["y"]) / 3
+            x = (face_vertices[0]["x"] + face_vertices[1]["x"] + face_vertices[2]["x"]) / 3
             
             raw_category = semseg[object_id]["label"]
             if raw_category in mapping:
@@ -82,9 +84,16 @@ for segmentation in listdir(seg_dir):
             else:
                 sem = 0 #default
 
-            center_sem = [x, y, z, sem]
-            center_sems += [center_sem]
-        center_sems = np.array(center_sems)
+            #add center
+            center_sem = [z, y, x, sem]
+            point_sems += [center_sem]
+            
+            #add corners
+            for i in range(3):
+                point_sem = [face_vertices[i]["z"], face_vertices[i]["y"], face_vertices[i]["x"], sem]
+                point_sems += [point_sem]
+            
+        point_sems = np.array(point_sems)
 
         sdf_base = path.join(args.sdf_path, segmentation + "_room" + str(region) + "__cmp__")
         sdf_number = 0
@@ -92,32 +101,31 @@ for segmentation in listdir(seg_dir):
         while path.exists(sdf_base + str(sdf_number) + ".sdf"):
             #print(f"--sdf {sdf_number}")
             sdf_path = sdf_base + str(sdf_number) + ".sdf"
-            [locs, sdf], dims, world2grid, known, colors = data_util.load_sdf(sdf_path, True, False, True)
+            [locs, sdf], [dimz, dimy, dimx], world2grid, known, colors = data_util.load_sdf(sdf_path, True, False, True)
             
-            centers = center_sems.copy()
+            points = point_sems.copy()
 
-            x = np.ones((centers.shape[0], 4))
-            x[:, :3] = centers[:, :3]
+            x = np.ones((points.shape[0], 4))
+            x[:, :3] = points[:, :3]
             x = np.matmul(world2grid, np.transpose(x))
             x = np.transpose(x)
             x = np.divide(x[:, :3], x[:, 3, None])
             x = np.rint(x)
 
             lower_bound = np.all(x >= 0, axis=1)
-            upper_bound = np.all(x < dims, axis=1)
+            upper_bound = np.all(x < [dimz, dimy, dimx], axis=1)
             inbounds = np.logical_and(lower_bound, upper_bound)
-            centers = np.column_stack((x, centers[:, 3]))
-            centers = centers[inbounds] #keep only values that are in the given grid
+            points = np.column_stack((x, points[:, 3]))
+            points = points[inbounds] #keep only values that are in the given grid
             
-            _, unique = np.unique(centers[:, :3], axis=0, return_index=True) #TODO how to deal with multiple values for a location
-            centers = centers[unique]
+            _, unique = np.unique(points[:, :3], axis=0, return_index=True) #TODO how to choose a label for a grid coordinate
+            points = points[unique]
 
-            centers = centers.astype(int)
+            points = points.astype(int)
             
             #convert to dense to keep format the same as colors
-            dense_sem = np.zeros([dims[0], dims[1], dims[2]], dtype=np.uint8)
-            dense_sem[centers[:, 0], centers[:, 1], centers[:, 2]] = centers[:, 3]
-            #dense_sem = data_util.sparse_to_dense_np(centers[:, :3], centers[:, 3], dims[0], dims[1], dims[2], 0)
+            dense_sem = np.zeros([dimz, dimy, dimx], dtype=np.uint8)
+            dense_sem[points[:, 0], points[:, 1], points[:, 2]] = points[:, 3]
 
             out_path = path.join(args.output_dir, segmentation + "_room" + str(region) + "__sem__" + str(sdf_number) + ".sdf")
             
