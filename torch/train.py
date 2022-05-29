@@ -118,11 +118,10 @@ UP_AXIS = 0
 _SPLITTER = ','
 # TODO just for debug
 args.max_epoch = 5
-args.batch_size = 2
-args.num_iters_geo_only = 20
-args.num_iters_before_semantic = 40
-# args.num_iters_before_content = 40
-
+args.batch_size = 1
+args.num_iters_geo_only = 40
+args.num_iters_before_semantic = 80
+args.num_iters_before_content = 80
 print(args)
 
 # specify gpu
@@ -440,6 +439,14 @@ def train(epoch, iter, dataloader, log_file, output_save):
 
         known = sample['known']
         colors = sample['colors'].cuda()
+        target_for_semantics = sample['semantics']
+        if args.weight_semantic_loss > 0:
+            if target_for_semantics is None:
+                print("No target for semantics, deactivate semantic loss.")
+                args.weight_semantic_loss = 0
+                target_for_semantics = 41 * torch.ones(sdfs.detach().shape).cuda()
+            else:
+                target_for_semantics = target_for_semantics.cuda()
 
         if args.use_loss_masking:
             known = (known <= 1).cuda()
@@ -501,18 +508,19 @@ def train(epoch, iter, dataloader, log_file, output_save):
             output_color = [locs, output_color[locs[:, -1], :, locs[:, 0], locs[:, 1], locs[:, 2]]]
         elif not pred_color:
             output_color = None
-        if pred_semantic:  # TODO valid?
-            assert sample['semantics'] is not None
-            target_for_semantics = sample['semantics']
-            pred_semantic = output_semantic[locs[:, -1], :, locs[:, 0], locs[:, 1], locs[:, 2]]
-            target_for_semantics = target_for_semantics[locs[:, -1], :, locs[:, 0], locs[:, 1],
-                                   locs[:, 2]].squeeze().cuda()
-            pred_semantic = pred_semantic[target_for_semantics.detach() < 41]
-            target = target_for_semantics[target_for_semantics.detach() < 41]
-            loss_semantic = torch.nn.functional.cross_entropy(pred_semantic, target, weight=args.weight_semantic_class)
+        if pred_semantic:
+            output_semantic = output_semantic[locs[:, -1], :, locs[:, 0], locs[:, 1], locs[:, 2]]
+            target_sem = target_for_semantics[locs[:, -1], :, locs[:, 0], locs[:, 1], locs[:, 2]].squeeze().cuda()
+            output_sem = output_semantic[target_sem.detach() < 41].clone()
+            target_sem = target_sem[target_sem.detach() < 41]
+            loss_semantic = torch.nn.functional.cross_entropy(output_sem, target_sem,
+                                                              weight=args.weight_semantic_class)
 
             loss += loss_semantic
             train_losssemantic.append(loss_semantic.item())
+            _, output_semantic = torch.max(output_semantic.detach(), dim=-1, keepdim=True)
+        else:
+            output_semantic = None
 
         missing_mask = None
         synth = None
@@ -521,6 +529,8 @@ def train(epoch, iter, dataloader, log_file, output_save):
         target2d = None
         target_depth = None
         pred_depth = None
+        target2d_label = None
+        pred2d_label = None
 
         if iter > args.num_iters_geo_only and len(output_sdf[0]) > 0 and (
                 args.weight_depth_loss > 0 or compute_2dstyle or compute_2dcontent or use_disc):
@@ -560,9 +570,10 @@ def train(epoch, iter, dataloader, log_file, output_save):
                 input_vals = inputs[input_locs[:, -1], :, input_locs[:, 0], input_locs[:, 1], input_locs[:, 2]]
                 input_normals = loss_util.compute_normals(inputs[:, :1], input_locs,
                                                           transform=torch.inverse(view_matrix))
-                raycast_color, _, raycast_normal = raycaster_rgbd(input_locs.cuda(), input_vals[:, :1].contiguous(),
-                                                                  input_vals[:, 1:].contiguous(), input_normals,
-                                                                  view_matrix, intrinsics)
+                # input raycast
+                raycast_color, _, raycast_normal, _ = raycaster_rgbd(
+                    input_locs.cuda(), input_vals[:, :1].contiguous(), input_vals[:, 1:].contiguous(), input_normals,
+                    None, view_matrix, intrinsics)
                 if pred_color:
                     invalid = raycast_color == -float('inf')
                     input2d = raycast_color.clone() * 2 - 1
@@ -584,8 +595,11 @@ def train(epoch, iter, dataloader, log_file, output_save):
                 colors = target_for_colors[locs[:, -1], locs[:, 0], locs[:, 1], locs[:, 2], :].float() / 255.0
                 target_normals = loss_util.compute_normals_sparse(locs, vals, target_for_sdf.shape[2:],
                                                                   transform=torch.inverse(view_matrix))
-                raycast_color, _, raycast_normal = raycaster_rgbd(locs, vals, colors.contiguous(), target_normals,
-                                                                  view_matrix, intrinsics)
+                target_semantics = target_for_semantics.to(torch.float)[locs[:, -1], :, locs[:, 0], locs[:, 1],
+                                   locs[:, 2]].contiguous()  # TODO float to int
+                # target raycast
+                raycast_color, _, raycast_normal, raycast_semantic = raycaster_rgbd(
+                    locs, vals, colors.contiguous(), target_normals, target_semantics, view_matrix, intrinsics)
                 if args.filter_proj_tgt:
                     invalid = loss_util.filter_proj_target(raycast_color, args.color_thresh, args.color_space)
                     invalid = invalid.unsqueeze(3).repeat(1, 1, 1, 3) | (raycast_color == -float('inf'))
@@ -607,19 +621,29 @@ def train(epoch, iter, dataloader, log_file, output_save):
                 else:
                     target2d = normals
                 target2d = target2d.permute(0, 3, 1, 2).contiguous()
+                if pred_semantic:
+                    target2d_label = raycast_semantic.detach()
+                    target2d_label[target2d_label == -float('inf')] = 41
             color = None
             if pred_color:
                 color = (output_color[1] + 1) * 0.5
             else:
                 color = torch.zeros(output_sdf[0].shape[0], 3).cuda()
-            # raycast prediction            
-            raycast_color, raycast_depth, raycast_normal = raycaster_rgbd(output_sdf[0].cuda(), output_sdf[1], color,
-                                                                          output_normals, view_matrix, intrinsics)
+            if pred_semantic:
+                semantic = output_semantic.to(torch.float) #TODO
+            else:
+                semantic = 41 * torch.ones(output_sdf[0].shape[0]).cuda()
+            # prediction raycast
+            raycast_color, raycast_depth, raycast_normal, raycast_semantic = raycaster_rgbd(
+                output_sdf[0].cuda(), output_sdf[1], color, output_normals, semantic, view_matrix, intrinsics)
             if args.weight_by_percent_pixels:
                 weight_sample_pred2d = torch.sum(
                     (raycast_color[:, :, :, 0] != -float('inf')).view(raycast_color.shape[0], -1), 1).float() / float(
                     args.style_width * args.style_height)
                 weight_sample_pred2d = torch.clamp(weight_sample_pred2d, 0, 0.3) / 0.3
+            if pred_semantic:
+                pred2d_label = raycast_semantic.detach()
+                pred2d_label[pred2d_label == -float('inf')] = 41
             # geo loss
             raycast_depth = raycast_depth.unsqueeze(1) * args.voxelsize
             valid = (raycast_depth != -float('inf')) & (images_depth != 0)
@@ -759,6 +783,7 @@ def train(epoch, iter, dataloader, log_file, output_save):
         if output_visual:
             vis_pred_sdf = [None] * args.batch_size
             vis_pred_color = [None] * args.batch_size
+            vis_pred_semantic = [None] * args.batch_size
             if output_color is not None:  # convert colors to vec3uc
                 output_color = torch.clamp(output_color.detach() * 255, 0, 255)
             if output_sdf is not None and len(output_sdf[0]) > 0:
@@ -769,6 +794,8 @@ def train(epoch, iter, dataloader, log_file, output_save):
                                            output_sdf[1].detach()[mask].squeeze().cpu().numpy()]
                     if output_color is not None:
                         vis_pred_color[b] = output_color[mask].cpu().numpy()
+                    if output_semantic is not None:
+                        vis_pred_semantic[b] = output_semantic[mask].cpu().numpy()
             inputs = inputs.cpu().numpy()
             target_for_colors = target_for_colors.cpu().numpy()
             vis_pred_images_color = None
@@ -776,6 +803,8 @@ def train(epoch, iter, dataloader, log_file, output_save):
             vis_input_images_color = None
             vis_pred_depth = None
             vis_target_depth = None
+            vis_pred_images_semantic = None
+            vis_target_images_semantic = None
             if synth is not None:
                 vis_pred_images_color = synth.detach().cpu().numpy()
                 vis_pred_images_color = np.transpose(vis_pred_images_color, [0, 2, 3, 1])
@@ -791,6 +820,11 @@ def train(epoch, iter, dataloader, log_file, output_save):
                 vis_pred_depth = data_util.vis_depth_as_hsv(vis_pred_depth, raycast_depth_max)
                 vis_target_depth = target_depth.cpu().numpy()[:, 0, :, :]
                 vis_target_depth = data_util.vis_depth_as_hsv(vis_target_depth, raycast_depth_max)
+            if pred2d_label is not None:
+                vis_pred_images_semantic = pred2d_label.cpu().numpy()[:, :, :, 0]
+                vis_pred_images_semantic = data_util.vis_semantic_as_hsv(vis_pred_images_semantic)
+                vis_target_images_semantic = target2d_label.cpu().numpy()[:, :, :, 0]
+                vis_target_images_semantic = data_util.vis_semantic_as_hsv(vis_target_images_semantic)
             pred_occ = None
             if output_occ is not None:
                 if isinstance(output_occ, tuple):
@@ -799,8 +833,10 @@ def train(epoch, iter, dataloader, log_file, output_save):
                     pred_occ = (torch.nn.Sigmoid()(output_occ) > 0.5).cpu().numpy().astype(np.float32)
             data_util.save_predictions(os.path.join(args.save, 'iter%d-epoch%d' % (iter, epoch), 'train'),
                                        np.arange(sdfs.shape[0]), sample['name'], inputs, target_for_sdf.cpu().numpy(),
-                                       target_for_colors, None, vis_tgt_images_color, vis_pred_sdf, vis_pred_color,
-                                       None, vis_pred_images_color, sample['world2grid'].numpy(), args.truncation,
+                                       target_for_colors, target_for_semantics.cpu().numpy(), None,
+                                       vis_tgt_images_color, vis_target_images_semantic,
+                                       vis_pred_sdf, vis_pred_color, vis_pred_semantic,
+                                       None, vis_pred_images_color, vis_pred_images_semantic, sample['world2grid'].numpy(), args.truncation,
                                        args.color_space, input_images=vis_input_images_color, pred_depth=vis_pred_depth,
                                        target_depth=vis_target_depth, pred_occ=pred_occ)
 
@@ -1188,18 +1224,14 @@ def main():
         if has_val:
             print_log(log_file_val, epoch, iter, train_losses, train_lossocc, train_iouocc, train_losssdf,
                       train_lossdepth, train_losscolor, train_losssemantic, train_lossdisc, train_lossdisc_real,
-                      train_lossdisc_fake,
-                      train_lossgen, train_lossstyle, train_losscontent, val_losses, val_lossocc, val_iouocc,
-                      val_losssdf, val_lossdepth, val_losscolor, val_losssemantic, val_lossdisc, val_lossdisc_real,
-                      val_lossdisc_fake,
-                      val_lossgen, val_lossstyle, val_losscontent, took)
+                      train_lossdisc_fake, train_lossgen, train_lossstyle, train_losscontent, val_losses, val_lossocc,
+                      val_iouocc, val_losssdf, val_lossdepth, val_losscolor, val_losssemantic, val_lossdisc,
+                      val_lossdisc_real, val_lossdisc_fake, val_lossgen, val_lossstyle, val_losscontent, took)
         else:
             print_log(log_file, epoch, iter, train_losses, train_lossocc, train_iouocc, train_losssdf, train_lossdepth,
                       train_losscolor, train_losssemantic, train_lossdisc, train_lossdisc_real, train_lossdisc_fake,
-                      train_lossgen,
-                      train_lossstyle, train_losscontent, None, None, None, None, None, None, None, None, None, None,
-                      None,
-                      None, None, took)
+                      train_lossgen, train_lossstyle, train_losscontent, None, None, None, None, None, None, None, None,
+                      None, None, None, None, None, took)
         torch.save({'epoch': epoch + 1, 'state_dict': model.state_dict(), 'optimizer': optimizer.state_dict()},
                    os.path.join(args.save, 'model-epoch-%s.pth' % epoch))
         if args.weight_disc_loss > 0:

@@ -10,10 +10,12 @@ void raycast_rgbd_cuda_forward(
 	torch::Tensor vals_sdf,
 	torch::Tensor vals_color,
 	torch::Tensor vals_normals,
+	torch::Tensor vals_semantic,
     torch::Tensor viewMatrixInv,
     torch::Tensor imageColor,
     torch::Tensor imageDepth,
     torch::Tensor imageNormal,
+    torch::Tensor imageSemantic,
 	torch::Tensor mapping2dto3d,
 	torch::Tensor mapping3dto2d_num,
 	torch::Tensor intrinsicParams,
@@ -23,18 +25,20 @@ void raycast_rgbd_cuda_backward(
     torch::Tensor grad_color,
     torch::Tensor grad_depth,
 	torch::Tensor grad_normal,
+	torch::Tensor grad_semantic,
     torch::Tensor sparse_mapping,
     torch::Tensor mapping3dto2d,
 	torch::Tensor mapping3dto2d_num,
 	torch::Tensor dims,
 	torch::Tensor d_color,
 	torch::Tensor d_depth,
-	torch::Tensor d_normals);
-	
+	torch::Tensor d_normals,
+	torch::Tensor d_semantic);
+
 void raycast_occ_cuda_forward(
     at::Tensor occ3d,
     at::Tensor occ2d,
-    at::Tensor viewMatrixInv, 
+    at::Tensor viewMatrixInv,
     at::Tensor intrinsicParams,
     at::Tensor opts);
 
@@ -56,10 +60,12 @@ void raycast_color_forward(
 	torch::Tensor vals_sdf,
 	torch::Tensor vals_color,
 	torch::Tensor vals_normals,
+	torch::Tensor vals_semantic,
     torch::Tensor viewMatrixInv,
     torch::Tensor imageColor,
     torch::Tensor imageDepth,
     torch::Tensor imageNormal,
+    torch::Tensor imageSemantic,
 	torch::Tensor mapping3dto2d,
 	torch::Tensor mapping3dto2d_num,
 	torch::Tensor intrinsicParams,
@@ -69,15 +75,19 @@ void raycast_color_forward(
   CHECK_INPUT(vals_sdf);
   CHECK_INPUT(vals_color);
   CHECK_INPUT(vals_normals);
+  CHECK_INPUT(vals_semantic);
   CHECK_INPUT(viewMatrixInv);
   CHECK_INPUT(imageColor);
   CHECK_INPUT(imageDepth);
   CHECK_INPUT(imageNormal);
+  CHECK_INPUT(imageSemantic);
   CHECK_INPUT(mapping3dto2d);
   CHECK_INPUT(mapping3dto2d_num);
   CHECK_INPUT(intrinsicParams);
 
-  return raycast_rgbd_cuda_forward(sparse_mapping, locs, vals_sdf, vals_color, vals_normals, viewMatrixInv, imageColor, imageDepth, imageNormal, mapping3dto2d, mapping3dto2d_num, intrinsicParams, opts);
+  return raycast_rgbd_cuda_forward(sparse_mapping, locs, vals_sdf, vals_color, vals_normals, vals_semantic,
+                                   viewMatrixInv, imageColor, imageDepth, imageNormal, imageSemantic,
+                                   mapping3dto2d, mapping3dto2d_num, intrinsicParams, opts);
 }
 
 void construct_dense_sparse_mapping(
@@ -93,34 +103,40 @@ void raycast_color_backward(
     torch::Tensor grad_color,
 	torch::Tensor grad_depth,
 	torch::Tensor grad_normal,
+    torch::Tensor grad_semantic,
     torch::Tensor sparse_mapping,
     torch::Tensor mapping3dto2d,
 	torch::Tensor mapping3dto2d_num,
 	torch::Tensor dims,
 	torch::Tensor d_color,
 	torch::Tensor d_depth,
-	torch::Tensor d_normals) {
+	torch::Tensor d_normals,
+    torch::Tensor d_semantic) {
   CHECK_INPUT(grad_color);
   CHECK_INPUT(grad_depth);
   CHECK_INPUT(grad_normal);
+  CHECK_INPUT(grad_semantic);
   CHECK_INPUT(sparse_mapping);
   CHECK_INPUT(mapping3dto2d);
   CHECK_INPUT(mapping3dto2d_num);
   CHECK_INPUT(d_color);
   CHECK_INPUT(d_depth);
   CHECK_INPUT(d_normals);
+  CHECK_INPUT(d_semantic);
 
   return raycast_rgbd_cuda_backward(
       grad_color,
 	  grad_depth,
 	  grad_normal,
+	  grad_semantic,
 	  sparse_mapping,
       mapping3dto2d,
 	  mapping3dto2d_num,
 	  dims,
 	  d_color,
 	  d_depth,
-	  d_normals);
+	  d_normals,
+      d_semantic);
 }
 
 void raycast_occ_forward(
