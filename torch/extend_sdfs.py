@@ -87,13 +87,13 @@ for segmentation in listdir(seg_dir):
             else:
                 sem = 0  # default
 
-            # add center
-            center_sem = [z, y, x, sem]
+            #add center
+            center_sem = [x, y, z, sem]
             point_sems += [center_sem]
 
             # add corners
             for i in range(3):
-                point_sem = [face_vertices[i]["z"], face_vertices[i]["y"], face_vertices[i]["x"], sem]
+                point_sem = [face_vertices[i]["x"], face_vertices[i]["y"], face_vertices[i]["z"], sem]
                 point_sems += [point_sem]
 
         point_sems = np.array(point_sems)
@@ -113,12 +113,12 @@ for segmentation in listdir(seg_dir):
             x = np.ones((points.shape[0], 4))
             x[:, :3] = points[:, :3]
             x = np.matmul(world2grid, np.transpose(x))
-            x = np.transpose(x) / voxelsize
+            x = np.transpose(x) #/ voxelsize
             x = np.divide(x[:, :3], x[:, 3, None])
             x = np.rint(x)
 
             lower_bound = np.all(x >= 0, axis=1)
-            upper_bound = np.all(x < [dimz, dimy, dimx], axis=1)
+            upper_bound = np.all(x < [dimx, dimy, dimz], axis=1)
             inbounds = np.logical_and(lower_bound, upper_bound)
             points = np.column_stack((x, points[:, 3]))
             points = points[inbounds]  # keep only values that are in the given grid
@@ -131,7 +131,12 @@ for segmentation in listdir(seg_dir):
 
             # convert to dense to keep format the same as colors
             dense_sem = np.zeros([dimz, dimy, dimx], dtype=np.uint8)
-            dense_sem[points[:, 0], points[:, 1], points[:, 2]] = points[:, 3]
+            dense_sem[points[:, 2], points[:, 1], points[:, 0]] = points[:, 3] #TODO store in xyz or zyx order?
+
+            # print([dimz, dimy, dimx])
+            # print(points)
+            # print(points.shape)
+            # print(np.bincount(points[:, 3]))
 
             out_path = path.join(args.output_dir,
                                  segmentation + "_room" + str(region) + "__sem__" + str(sdf_number) + ".sdf")
