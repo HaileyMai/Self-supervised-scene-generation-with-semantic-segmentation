@@ -398,10 +398,10 @@ def vis_depth_as_hsv(depths, depth_max):
     return depths
 
 
-def vis_semantic_as_hsv(semantics):
+def vis_semantic(semantics, mapping_color):
     sz = semantics.shape
     semantics = semantics.flatten()
-    semantics = 359 * np.clip(semantics / 41, 0, 1)
+    semantics = 359/2 * np.clip(semantics / 42, 0, 1)
     semantics = np.stack([np.ones(semantics.shape[0]), np.ones(semantics.shape[0]) * 0.5, semantics], 1)
     return convert_hsvgrid_to_rgbgrid(semantics).reshape((sz[0], sz[1], sz[2], 3))
 
@@ -567,9 +567,17 @@ def convert_lab01_to_rgb_pt(colorgrid):
     return convert_lab_to_rgb_pt(colorgrid).view(sz)
 
 
+def map_label_to_color(semantics, semantic_color):#TODO more elegant?
+    dims = semantics.shape
+    semantics = semantics.flatten().astype(np.int)
+    sem_color = np.zeros((semantics.shape[0], 3))
+    sem_color[:] = semantic_color[semantics]
+    return sem_color.reshape((dims[:-1]+(3,)))
+
+
 def save_predictions(output_path, indices, names, inputs, target_for_sdf, target_for_colors, target_for_semantics,
                      target3d_hier, target_images, target_semantic_images, output_sdf, output_color, output_semantic,
-                     output3d_hier, output_images, output_semantic_images, world2grids, truncation, color_space='rgb',
+                     output3d_hier, output_images, output_semantic_images, world2grids, truncation, semantic_color, color_space='rgb',
                      input_images=None, pred_depth=None, target_depth=None, pred_occ=None, thresh=1, aux_images=None):
     if not os.path.isdir(output_path):
         os.makedirs(output_path)
@@ -650,6 +658,9 @@ def save_predictions(output_path, indices, names, inputs, target_for_sdf, target
         if aux_images is not None:
             aux_images = np.clip(255 * aux_images, 0, 255).astype(np.uint8)
 
+    if target_for_semantics is not None:
+        target_for_semantics = target_for_semantics.transpose(0, 2, 3, 4, 1)
+
     for k in range(len(indices)):
         name = names[indices[k]].replace('/', '_')
         if inputs is not None:
@@ -678,6 +689,12 @@ def save_predictions(output_path, indices, names, inputs, target_for_sdf, target
             if target_for_colors is not None:
                 colors = torch.from_numpy(target_for_colors[k])
                 colors = colors.byte()
+            if target_for_semantics is not None:
+                semantics = target_for_semantics[k]
+                dense_sem_color = map_label_to_color(semantics, semantic_color).astype(np.uint8)
+                dense_sem_color = torch.from_numpy(dense_sem_color).byte()
+                mc.marching_cubes(torch.from_numpy(target), dense_sem_color, isovalue=isovalue, truncation=trunc, thresh=10,
+                                  output_filename=os.path.join(output_path, name + 'target-sem-mesh' + ext))
             mc.marching_cubes(torch.from_numpy(target), colors, isovalue=isovalue, truncation=trunc, thresh=10,
                               output_filename=os.path.join(output_path, name + 'target-mesh' + ext))
         if target_color_images is not None and target_color_images[k] is not None:
@@ -698,10 +715,12 @@ def save_predictions(output_path, indices, names, inputs, target_for_sdf, target
             vis = np.clip((input_normal_images[k] + 1) * 0.5 * 255, 0, 255).astype(np.uint8)
             Image.fromarray(vis).save(os.path.join(output_path, name + '_input-normals.png'))
         if target_semantic_images is not None:
-            vis = np.clip(target_semantic_images[k] * 255, 0, 255).astype(np.uint8)
+            semantics = target_semantic_images[k]
+            vis = map_label_to_color(semantics, semantic_color).astype(np.uint8)
             Image.fromarray(vis).save(os.path.join(output_path, name + '_target-semantics.png'))
         if output_semantic_images is not None:
-            vis = np.clip(output_semantic_images[k] * 255, 0, 255).astype(np.uint8)
+            semantics = output_semantic_images[k]
+            vis = map_label_to_color(semantics, semantic_color).astype(np.uint8)
             Image.fromarray(vis).save(os.path.join(output_path, name + '_output-semantics.png'))
         if pred_depth is not None:
             vis = np.clip(pred_depth[k] * 255, 0, 255).astype(np.uint8)

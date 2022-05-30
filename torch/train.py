@@ -77,7 +77,6 @@ parser.add_argument('--input_mask', type=int, default=1, help='input mask')
 parser.add_argument('--no_logweight_sdf', dest='logweight_sdf', action='store_false')
 parser.add_argument('--weight_missing_geo', type=float, default=5.0, help='per-voxel weight for missing geo')
 parser.add_argument('--weight_missing_color', type=float, default=1.0, help='per-voxel weight for missing color')
-parser.add_argument('--weight_missing_semantic', type=float, default=1.0, help='per-voxel weight for missing semantic')
 parser.add_argument('--weight_surf_geo', type=float, default=1.0, help='per-voxel weight for surf geo')
 parser.add_argument('--no_pass_geo_feats', dest='pass_geo_feats', action='store_false')
 parser.add_argument('--no_pass_color_feats', dest='pass_color_feats', action='store_false')
@@ -120,10 +119,12 @@ _SPLITTER = ','
 # TODO just for debug
 args.max_epoch = 10
 args.batch_size = 2
-args.num_iters_geo_only = 0
-args.num_iters_before_semantic = 0
+args.num_iters_geo_only = 60
+args.num_iters_before_semantic = 120
 # args.num_iters_before_content = 80
 print(args)
+
+args.semantic_color = np.load("category_color.npz")['mapping_color']
 
 # specify gpu
 os.environ['CUDA_VISIBLE_DEVICES'] = str(args.gpu)
@@ -823,12 +824,8 @@ def train(epoch, iter, dataloader, log_file, output_save):
                 vis_target_depth = target_depth.cpu().numpy()[:, 0, :, :]
                 vis_target_depth = data_util.vis_depth_as_hsv(vis_target_depth, raycast_depth_max)
             if pred2d_label is not None:
-                vis_pred_images_semantic = pred2d_label.cpu().numpy()[:, :, :, 0]
-                vis_pred_images_semantic = data_util.vis_semantic_as_hsv(vis_pred_images_semantic)
-                vis_target_images_semantic = target2d_label.cpu().numpy()[:, :, :, 0]
-                vis_target_images_semantic = data_util.vis_semantic_as_hsv(vis_target_images_semantic)
-                labeled_target = (vis_target_images_semantic != 41).sum()
-                labeled_pred = (vis_pred_images_semantic != 41).sum()
+                vis_pred_images_semantic = pred2d_label.cpu().numpy()
+                vis_target_images_semantic = target2d_label.cpu().numpy()
             pred_occ = None
             if output_occ is not None:
                 if isinstance(output_occ, tuple):
@@ -841,7 +838,7 @@ def train(epoch, iter, dataloader, log_file, output_save):
                                        vis_tgt_images_color, vis_target_images_semantic,
                                        vis_pred_sdf, vis_pred_color, vis_pred_semantic,
                                        None, vis_pred_images_color, vis_pred_images_semantic, sample['world2grid'].numpy(), args.truncation,
-                                       args.color_space, input_images=vis_input_images_color, pred_depth=vis_pred_depth,
+                                       args.semantic_color, args.color_space, input_images=vis_input_images_color, pred_depth=vis_pred_depth,
                                        target_depth=vis_target_depth, pred_occ=pred_occ)
 
     return train_losses, train_lossocc, train_iouocc, train_losssdf, train_lossdepth, train_losscolor, train_losssemantic, train_lossdisc, train_lossdisc_real, train_lossdisc_fake, train_lossgen, train_lossstyle, train_losscontent, iter
@@ -1190,7 +1187,7 @@ def test(epoch, iter, dataloader, log_file, output_save):
                         pred_occ = (torch.nn.Sigmoid()(output_occ) > 0.5).cpu().numpy().astype(np.float32)
                 data_util.save_predictions(os.path.join(args.save, 'iter%d-epoch%d' % (iter, epoch), 'val'),
                                            np.arange(sdfs.shape[0]), sample['name'], inputs,
-                                           target_for_sdf.cpu().numpy(), target_for_colors, None, vis_tgt_images_color,
+                                           target_for_sdf.cpu().numpy(), target_for_colors, target_for_semantics, None, vis_tgt_images_color,
                                            vis_pred_sdf, vis_pred_color, None, vis_pred_images_color,
                                            sample['world2grid'], args.truncation, args.color_space,
                                            pred_depth=vis_pred_depth, target_depth=vis_target_depth, pred_occ=pred_occ)

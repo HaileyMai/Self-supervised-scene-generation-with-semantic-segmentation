@@ -1,13 +1,20 @@
 from http.client import UNAUTHORIZED
+
+import os
 from plyfile import PlyData, PlyElement
 from os import path, listdir
 import json
 import random
 import data_util
+import torch
 import numpy as np
+from matplotlib.patches import Rectangle
+import matplotlib.pyplot as plt
+import matplotlib.colors as mcolors
 import pandas as pd
 import argparse
 import zipfile
+import utils.marching_cubes.marching_cubes as mc
 
 """
 First run download-mp.py -o [output_dir] --type region_segmentations
@@ -28,6 +35,8 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--seg_path", type=str, required=True, help="output directory of the region segmentation download")
 parser.add_argument("--mapping", type=str, required=True,
                     help="table that contains the mapping of raw_categories to ids")
+parser.add_argument("--category_list", type=str, required=True, help="table contains the mapping from index to name")
+parser.add_argument("--category_name", type=str, default="mpcat40")
 parser.add_argument("--category_taxonomy", type=str, default="mpcat40index",
                     help="what taxonomy to use, should be a column of the mapping table")
 parser.add_argument("--raw_category", type=str, default="raw_category",
@@ -39,9 +48,70 @@ args = parser.parse_args()
 print(args)
 
 mapping_table = pd.read_csv(args.mapping, sep="\t")
+category = pd.read_csv(args.category_list, sep="\t")
 assert args.category_taxonomy in mapping_table.columns and args.raw_category in mapping_table.columns
 # mapping is a dict from string to id
 mapping = dict(zip(mapping_table[args.raw_category], mapping_table[args.category_taxonomy]))
+np.random.seed(6)
+mapping_label = category[args.category_name].values
+mapping_color = np.zeros((42, 3))
+for i in range(42):
+    mapping_color[i] = np.random.choice(range(256), size=3)
+mapping_color[-1] = np.array([0, 0, 0])
+
+
+def plot_colortable(colors, title, emptycols=0):
+    cell_width = 212
+    cell_height = 22
+    swatch_width = 48
+    margin = 12
+    topmargin = 40
+
+    names = list(colors)
+
+    n = len(names)
+    ncols = 4 - emptycols
+    nrows = n // ncols + int(n % ncols > 0)
+
+    width = cell_width * 4 + 2 * margin
+    height = cell_height * nrows + margin + topmargin
+    dpi = 72
+
+    fig, ax = plt.subplots(figsize=(width / dpi, height / dpi), dpi=dpi)
+    fig.subplots_adjust(margin / width, margin / height,
+                        (width - margin) / width, (height - topmargin) / height)
+    ax.set_xlim(0, cell_width * 4)
+    ax.set_ylim(cell_height * (nrows - 0.5), -cell_height / 2.)
+    ax.yaxis.set_visible(False)
+    ax.xaxis.set_visible(False)
+    ax.set_axis_off()
+    ax.set_title(title, fontsize=24, loc="left", pad=10)
+
+    for i in range(n):
+        row = i % nrows
+        col = i // nrows
+        y = row * cell_height
+
+        swatch_start_x = cell_width * col
+        text_pos_x = cell_width * col + swatch_width + 7
+
+        ax.text(text_pos_x, y, mapping_label[i], fontsize=14,
+                horizontalalignment='left',
+                verticalalignment='center')
+
+        ax.add_patch(
+            Rectangle(xy=(swatch_start_x, y - 9), width=swatch_width,
+                      height=18, facecolor=colors[i], edgecolor='0.7')
+        )
+
+    return fig
+
+
+color_list = tuple(map(tuple, mapping_color/255))
+category_img = plot_colortable(color_list, "Category List")
+plt.show()
+category_img.savefig("Category_list.png")
+np.savez("category_color", mapping_color=mapping_color.astype(np.uint8))
 
 seg_dir = path.join(args.seg_path, "v1", "scans")
 
@@ -87,7 +157,7 @@ for segmentation in listdir(seg_dir):
             else:
                 sem = 0  # default
 
-            #add center
+            # add center
             center_sem = [x, y, z, sem]
             point_sems += [center_sem]
 
@@ -101,19 +171,22 @@ for segmentation in listdir(seg_dir):
         sdf_base = path.join(args.sdf_path, segmentation + "_room" + str(region) + "__cmp__")
         sdf_number = 0
 
+        # TODO checkout before to stop extracting region.ply if no sdf exists
         while path.exists(sdf_base + str(sdf_number) + ".sdf"):
             # print(f"--sdf {sdf_number}")
             sdf_path = sdf_base + str(sdf_number) + ".sdf"
             [locs, sdf], [dimz, dimy, dimx], world2grid, known, colors, voxelsize = data_util.load_sdf(sdf_path, True,
                                                                                                        False, True,
                                                                                                        return_voxelsize=True)
+            sdf = data_util.sparse_to_dense_np(locs, sdf[:, np.newaxis], dimx, dimy, dimz, -float('inf'))
+            sdf = data_util.preprocess_sdf_pt(sdf, 3)
 
             points = point_sems.copy()
 
             x = np.ones((points.shape[0], 4))
             x[:, :3] = points[:, :3]
             x = np.matmul(world2grid, np.transpose(x))
-            x = np.transpose(x) #/ voxelsize
+            x = np.transpose(x) / voxelsize
             x = np.divide(x[:, :3], x[:, 3, None])
             x = np.rint(x)
 
@@ -131,7 +204,7 @@ for segmentation in listdir(seg_dir):
 
             # convert to dense to keep format the same as colors
             dense_sem = np.zeros([dimz, dimy, dimx], dtype=np.uint8)
-            dense_sem[points[:, 2], points[:, 1], points[:, 0]] = points[:, 3] #TODO store in xyz or zyx order?
+            dense_sem[points[:, 2], points[:, 1], points[:, 0]] = points[:, 3]  # TODO store in xyz or zyx order?
 
             # print([dimz, dimy, dimx])
             # print(points)
@@ -145,6 +218,14 @@ for segmentation in listdir(seg_dir):
                 with open(out_path, "wb") as o:
                     o.write(i.read())  # copy everything
                     o.write(dense_sem.tobytes())
+
+            dense_sem_color = np.zeros([dimz, dimy, dimx, 3], dtype=np.uint8)
+            dense_sem_color[points[:, 2], points[:, 1], points[:, 0]] = mapping_color[points[:, 3]]
+            dense_sem_color = torch.from_numpy(dense_sem_color).byte()
+            mc.marching_cubes(torch.from_numpy(sdf), dense_sem_color, isovalue=0, truncation=10, thresh=10,
+                              output_filename=os.path.join(args.output_dir + 'mesh',
+                                                           segmentation + "_room" + str(region) + "__sem__" + str(
+                                                               sdf_number) + '.ply'))
 
             sdf_number += 1
 
