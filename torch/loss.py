@@ -158,9 +158,7 @@ def compute_geo_occ_loss_sparse(target_sdf, output_occ, known_mask, weight, trun
         if w is not None:
             w = torch.nn.MaxPool3d(factor)(w)
     dims = target.shape[2:]
-    locs = output_occ[0][:, -1] * dims[0] * dims[1] * dims[2] + output_occ[0][:, 0] * dims[1] * dims[2] + output_occ[0][
-                                                                                                          :, 1] * dims[
-               2] + output_occ[0][:, 2]
+    locs = output_occ[0][:, -1] * dims[0] * dims[1] * dims[2] + output_occ[0][:, 0] * dims[1] * dims[2] + output_occ[0][:, 1] * dims[2] + output_occ[0][:, 2]
     target = target.view(-1)[locs]
     if w is not None:
         w = w.view(-1)[locs]
@@ -257,21 +255,6 @@ def compute_2dcolor_loss(raycast_color, target_color, weight_color):
     tgt = tgt[valid]
     loss_color = torch.mean(torch.abs(pred - tgt))
     return loss_color
-
-
-def compute_2dsemantic_loss(raycast_semantic, target_semantic, weight_semantic):
-    loss = torch.nn.CrossEntropyLoss()
-    valid = raycast_semantic != -float('inf')
-    pred = raycast_semantic
-    tgt = target_semantic
-    if weight_semantic is not None:
-        w = weight_semantic.view(weight_semantic.shape[0], weight_semantic.shape[2], weight_semantic.shape[3], 1)
-        pred = pred * w
-        tgt = tgt * w
-    pred = pred[valid]
-    tgt = tgt[valid]
-    loss_semantic = loss(pred, tgt)
-    return loss_semantic
 
 
 # z-y-x (note: returns unnormalized!)

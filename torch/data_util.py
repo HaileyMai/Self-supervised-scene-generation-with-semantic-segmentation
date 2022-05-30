@@ -132,21 +132,18 @@ def load_sdf(file, load_sparse, load_known, load_color, is_sparse_file=True, col
     semantic = None
 
     # TODO hack for now, always loads dense, needs refactoring
-    if load_semantic:  
+    if load_semantic:
         num_semantics = dimx * dimy * dimz
         semantic = struct.unpack('B' * num_semantics, fin.read(num_semantics))
         semantic = np.asarray(semantic, dtype=np.uint8).reshape([dimz, dimy, dimx])
         fin.close()
         sdf = sparse_to_dense_np(locs, sdf[:, np.newaxis], dimx, dimy, dimz, -float('inf'))
         return sdf, world2grid, known, color, semantic
-    
+    fin.close()
     # TODO refactor
     if return_voxelsize and load_sparse:
         return [locs, sdf], [dimz, dimy, dimx], world2grid, known, color, voxelsize
-
-    fin.close()
-
-    if load_sparse:
+    elif load_sparse:
         return [locs, sdf], [dimz, dimy, dimx], world2grid, known, color
     else:
         sdf = sparse_to_dense_np(locs, sdf[:, np.newaxis], dimx, dimy, dimz, -float('inf'))
@@ -395,10 +392,18 @@ def vis_depth_as_hsv(depths, depth_max):
     depths = np.stack([depths, np.ones(depths.shape[0]), np.ones(depths.shape[0]) * 0.5], 1)
     depths = convert_hsvgrid_to_rgbgrid(depths)
     if len(sz) == 3:
-        depths = depths.reshape(sz[0], sz[1], sz[2], 3)
+        depths = depths.reshape((sz[0], sz[1], sz[2], 3))
     elif len(sz) == 4:
-        depths = depths.reshape(sz[0], sz[1], sz[2], sz[3], 3)
+        depths = depths.reshape((sz[0], sz[1], sz[2], sz[3], 3))
     return depths
+
+
+def vis_semantic_as_hsv(semantics):
+    sz = semantics.shape
+    semantics = semantics.flatten()
+    semantics = 359 * np.clip(semantics / 41, 0, 1)
+    semantics = np.stack([np.ones(semantics.shape[0]), np.ones(semantics.shape[0]) * 0.5, semantics], 1)
+    return convert_hsvgrid_to_rgbgrid(semantics).reshape((sz[0], sz[1], sz[2], 3))
 
 
 def convert_hsvgrid_to_rgbgrid(hsv):
@@ -562,10 +567,10 @@ def convert_lab01_to_rgb_pt(colorgrid):
     return convert_lab_to_rgb_pt(colorgrid).view(sz)
 
 
-def save_predictions(output_path, indices, names, inputs, target_for_sdf, target_for_colors, target_hier, target_images,
-                     output_sdf, output_color, output_hier, output_images, world2grids, truncation, color_space='rgb',
-                     input_images=None, pred_depth=None, target_depth=None, pred_occ=None, thresh=1, pred_color=False,
-                     aux_images=None):
+def save_predictions(output_path, indices, names, inputs, target_for_sdf, target_for_colors, target_for_semantics,
+                     target3d_hier, target_images, target_semantic_images, output_sdf, output_color, output_semantic,
+                     output3d_hier, output_images, output_semantic_images, world2grids, truncation, color_space='rgb',
+                     input_images=None, pred_depth=None, target_depth=None, pred_occ=None, thresh=1, aux_images=None):
     if not os.path.isdir(output_path):
         os.makedirs(output_path)
     if target_for_sdf is not None:
@@ -575,7 +580,8 @@ def save_predictions(output_path, indices, names, inputs, target_for_sdf, target
     isovalue = 0
     trunc = truncation - 0.1
     ext = '.ply'
-    pred_color = pred_color or (output_color[0] is not None)
+
+    pred_color = output_color[0] is not None
 
     input_color_images = None
     target_color_images = None
@@ -583,6 +589,7 @@ def save_predictions(output_path, indices, names, inputs, target_for_sdf, target
     input_normal_images = None
     target_normal_images = None
     output_normal_images = None
+
     if target_images is not None:
         if pred_color:
             target_color_images = target_images[:, :, :, :3]
@@ -690,6 +697,12 @@ def save_predictions(output_path, indices, names, inputs, target_for_sdf, target
         if input_normal_images is not None:
             vis = np.clip((input_normal_images[k] + 1) * 0.5 * 255, 0, 255).astype(np.uint8)
             Image.fromarray(vis).save(os.path.join(output_path, name + '_input-normals.png'))
+        if target_semantic_images is not None:
+            vis = np.clip(target_semantic_images[k] * 255, 0, 255).astype(np.uint8)
+            Image.fromarray(vis).save(os.path.join(output_path, name + '_target-semantics.png'))
+        if output_semantic_images is not None:
+            vis = np.clip(output_semantic_images[k] * 255, 0, 255).astype(np.uint8)
+            Image.fromarray(vis).save(os.path.join(output_path, name + '_output-semantics.png'))
         if pred_depth is not None:
             vis = np.clip(pred_depth[k] * 255, 0, 255).astype(np.uint8)
             Image.fromarray(vis).save(os.path.join(output_path, name + '_pred-depth.png'))
@@ -705,8 +718,8 @@ def save_predictions(output_path, indices, names, inputs, target_for_sdf, target
                                          dims[0], -float('inf')), 0, 255).astype(np.uint8)[0]
             target = np.clip(target_for_colors[k], 0, 255).astype(np.uint8)[0]
             pred = \
-            np.clip(sparse_to_dense_np(output_sdf[k][0][:, :3], output_color[k], dims[2], dims[1], dims[0], 0), 0,
-                    255).astype(np.uint8)[0]
+                np.clip(sparse_to_dense_np(output_sdf[k][0][:, :3], output_color[k], dims[2], dims[1], dims[0], 0), 0,
+                        255).astype(np.uint8)[0]
             Image.fromarray(input).save(os.path.join(output_path, name + '_input.png'))
             Image.fromarray(target).save(os.path.join(output_path, name + '_target.png'))
             Image.fromarray(pred).save(os.path.join(output_path, name + '_pred.png'))

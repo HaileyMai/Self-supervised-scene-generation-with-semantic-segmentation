@@ -256,7 +256,7 @@ class SceneDataset(torch.utils.data.Dataset):
             known = known[np.newaxis, :]
             known = torch.from_numpy(known)
 
-        sample = {'name': name, 'input': input, 'sdf': sdf, 'world2grid': world2grid, 'known': known, 'colors': colors,
-                  'semantic': semantic, 'image_depth': image_depth, 'image_color': image_color,
+        sample = {'name': name, 'input': input, 'sdf': sdf, 'world2grid': world2grid, 'known': known,
+                  'colors': colors, 'semantic': semantic, 'image_depth': image_depth, 'image_color': image_color,
                   'image_pose': image_pose, 'image_intrinsic': image_intrinsic, 'mask': mask}
         return sample

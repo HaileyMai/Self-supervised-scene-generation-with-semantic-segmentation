@@ -177,7 +177,7 @@ class Generator(nn.Module):
         self.max_dilation = max_dilation
         self.truncation = truncation
         self.interpolate_mode = 'nearest'
-        self.n_classes = 40   # TODO
+        self.n_classes = 41   # TODO
 
         use_dilations = True
         nz_in = max_data_size[0]
@@ -207,9 +207,9 @@ class Generator(nn.Module):
             nn.Conv3d(self.nf, 2 * self.nf, (kz[3], 4, 4), 2, 1, bias=self.use_bias),
             nn.LeakyReLU(0.2, True),
             nn.BatchNorm3d(2 * self.nf),
-            # nn.Conv3d(2 * self.nf, 2 * self.nf, (kz[4], 3, 3), 1, 1, bias=self.use_bias),
-            # nn.LeakyReLU(0.2, True),
-            # nn.BatchNorm3d(2 * self.nf),
+            nn.Conv3d(2 * self.nf, 2 * self.nf, (kz[4], 3, 3), 1, 1, bias=self.use_bias),
+            nn.LeakyReLU(0.2, True),
+            nn.BatchNorm3d(2 * self.nf),
             # nn.Conv3d(2 * self.nf, 2 * self.nf, (kz[5], 3, 3), 1, 1, bias=self.use_bias),
             # nn.LeakyReLU(0.2, True),
             # nn.BatchNorm3d(2 * self.nf),
@@ -251,9 +251,9 @@ class Generator(nn.Module):
             torch.nn.Conv3d(self.nf, self.nf // 2, 3, 1, 1, bias=self.use_bias),
             nn.LeakyReLU(0.2, True),
             nn.BatchNorm3d(self.nf // 2),
-            # torch.nn.Conv3d(self.nf // 2, self.nf // 2, (kz[12], 3, 3), 1, 1, bias=self.use_bias),
-            # nn.LeakyReLU(0.2, True),
-            # nn.BatchNorm3d(self.nf // 2),
+            torch.nn.Conv3d(self.nf // 2, self.nf // 2, (kz[12], 3, 3), 1, 1, bias=self.use_bias),
+            nn.LeakyReLU(0.2, True),
+            nn.BatchNorm3d(self.nf // 2),
             torch.nn.Conv3d(self.nf // 2, 1, (kz[12], 3, 3), 1, 1, bias=self.use_bias)
         )
         # === coarse net ===
@@ -264,9 +264,9 @@ class Generator(nn.Module):
             nn.Conv3d(self.nf, 2 * self.nf, (kz[1], 4, 4), 2, 1, bias=self.use_bias),
             nn.LeakyReLU(0.2, True),
             nn.BatchNorm3d(2 * self.nf),
-            # nn.Conv3d(2 * self.nf, 2 * self.nf, (kz[2], 3, 3), 1, 1, bias=self.use_bias),
-            # nn.LeakyReLU(0.2, True),
-            # nn.BatchNorm3d(2 * self.nf)
+            nn.Conv3d(2 * self.nf, 2 * self.nf, (kz[2], 3, 3), 1, 1, bias=self.use_bias),
+            nn.LeakyReLU(0.2, True),
+            nn.BatchNorm3d(2 * self.nf)
         )
         self.color_0_geo = None
         if self.pass_geo_feats:
@@ -281,16 +281,16 @@ class Generator(nn.Module):
             nn.Conv3d(nf1, nf_factor * self.nf, (kz[3], 4, 4), 2, 1, bias=self.use_bias),
             nn.LeakyReLU(0.2, True),
             nn.BatchNorm3d(nf_factor * self.nf),
-            # nn.Conv3d(nf_factor * self.nf, nf_factor * self.nf, (kz[4], 3, 3), 1, 1, bias=self.use_bias),
-            # nn.LeakyReLU(0.2, True),
-            # nn.BatchNorm3d(nf_factor * self.nf),
-            # nn.Conv3d(nf_factor * self.nf, nf_factor * self.nf, (kz[5], 3, 3), 1, 1, bias=self.use_bias),
-            # nn.LeakyReLU(0.2, True),
-            # nn.BatchNorm3d(nf_factor * self.nf),
-            # nn.Conv3d(nf_factor * self.nf, nf_factor * self.nf, (kz[6], 3, 3), 1, dyx[0], dilation=dyx[0],
-            #           bias=self.use_bias),
-            # nn.LeakyReLU(0.2, True),
-            # nn.BatchNorm3d(nf_factor * self.nf),
+            nn.Conv3d(nf_factor * self.nf, nf_factor * self.nf, (kz[4], 3, 3), 1, 1, bias=self.use_bias),
+            nn.LeakyReLU(0.2, True),
+            nn.BatchNorm3d(nf_factor * self.nf),
+            nn.Conv3d(nf_factor * self.nf, nf_factor * self.nf, (kz[5], 3, 3), 1, 1, bias=self.use_bias),
+            nn.LeakyReLU(0.2, True),
+            nn.BatchNorm3d(nf_factor * self.nf),
+            nn.Conv3d(nf_factor * self.nf, nf_factor * self.nf, (kz[6], 3, 3), 1, dyx[0], dilation=dyx[0],
+                      bias=self.use_bias),
+            nn.LeakyReLU(0.2, True),
+            nn.BatchNorm3d(nf_factor * self.nf),
             # nn.Conv3d(nf_factor * self.nf, nf_factor * self.nf, (kz[7], 3, 3), 1, dyx[1], dilation=dyx[1],
             #           bias=self.use_bias),
             # nn.LeakyReLU(0.2, True),
@@ -373,15 +373,15 @@ class Generator(nn.Module):
                 nn.Conv3d(2 * nfr, nf_factor * nfr, 3, 1, 1, bias=self.use_bias),
                 nn.LeakyReLU(0.2, True),
                 nn.BatchNorm3d(nf_factor * nfr),
-                # nn.Conv3d(nf_factor * nfr, nf_factor * nfr, 3, 1, 1, bias=self.use_bias),
-                # nn.LeakyReLU(0.2, True),
-                # nn.BatchNorm3d(nf_factor * nfr),
-                # nn.Conv3d(nf_factor * nfr, nf_factor * nfr, 3, 1, 1, bias=self.use_bias),
-                # nn.LeakyReLU(0.2, True),
-                # nn.BatchNorm3d(nf_factor * nfr),
-                # nn.Conv3d(nf_factor * nfr, nf_factor * nfr, 3, 1, dyx[4], dilation=dyx[4], bias=self.use_bias),
-                # nn.LeakyReLU(0.2, True),
-                # nn.BatchNorm3d(nf_factor * nfr),
+                nn.Conv3d(nf_factor * nfr, nf_factor * nfr, 3, 1, 1, bias=self.use_bias),
+                nn.LeakyReLU(0.2, True),
+                nn.BatchNorm3d(nf_factor * nfr),
+                nn.Conv3d(nf_factor * nfr, nf_factor * nfr, 3, 1, 1, bias=self.use_bias),
+                nn.LeakyReLU(0.2, True),
+                nn.BatchNorm3d(nf_factor * nfr),
+                nn.Conv3d(nf_factor * nfr, nf_factor * nfr, 3, 1, dyx[4], dilation=dyx[4], bias=self.use_bias),
+                nn.LeakyReLU(0.2, True),
+                nn.BatchNorm3d(nf_factor * nfr),
                 # nn.Conv3d(nf_factor * nfr, nf_factor * nfr, 3, 1, dyx[5], dilation=dyx[5], bias=self.use_bias),
                 # nn.LeakyReLU(0.2, True),
                 # nn.BatchNorm3d(nf_factor * nfr),
@@ -403,9 +403,9 @@ class Generator(nn.Module):
             nn.Conv3d(nf_factor * nfr, 2 * nfr, 3, 1, 1, bias=self.use_bias),
             nn.LeakyReLU(0.2, True),
             nn.BatchNorm3d(2 * nfr),
-            # nn.Conv3d(2 * nfr, 2 * nfr, 3, 1, 1, bias=self.use_bias),
-            # nn.LeakyReLU(0.2, True),
-            # nn.BatchNorm3d(2 * nfr),
+            nn.Conv3d(2 * nfr, 2 * nfr, 3, 1, 1, bias=self.use_bias),
+            nn.LeakyReLU(0.2, True),
+            nn.BatchNorm3d(2 * nfr),
         )
         self.refine_color_3 = nn.Sequential(
             nn.Conv3d(2 * nfr, nfr, 3, 1, 1, bias=self.use_bias),
@@ -424,9 +424,9 @@ class Generator(nn.Module):
             nn.Conv3d(self.nf, 2 * self.nf, (kz[1], 4, 4), 2, 1, bias=self.use_bias),
             nn.LeakyReLU(0.2, True),
             nn.BatchNorm3d(2 * self.nf),
-            # nn.Conv3d(2 * self.nf, 2 * self.nf, (kz[2], 3, 3), 1, 1, bias=self.use_bias),
-            # nn.LeakyReLU(0.2, True),
-            # nn.BatchNorm3d(2 * self.nf)
+            nn.Conv3d(2 * self.nf, 2 * self.nf, (kz[2], 3, 3), 1, 1, bias=self.use_bias),
+            nn.LeakyReLU(0.2, True),
+            nn.BatchNorm3d(2 * self.nf)
         )
         self.sem_0_geo = None
         self.sem_0_color = None
@@ -443,7 +443,9 @@ class Generator(nn.Module):
             )
 
         nf2 = 2 * self.nf if not (self.pass_geo_feats and self.pass_color_feats) else 3 * self.nf + 2 * nfr
-        nf_factor = 4   # TODO
+        nf_factor = 6  # TODO
+        print('nf_factor = %d' % nf_factor)
+        print('nf2 = %d' % nf2)
         self.sem_1 = nn.Sequential(
             nn.Conv3d(nf2, nf_factor * self.nf, (kz[3], 4, 4), 2, 1, bias=self.use_bias),
             nn.LeakyReLU(0.2, True),
@@ -478,23 +480,19 @@ class Generator(nn.Module):
             # nn.BatchNorm3d(nf_factor * self.nf),
         )
         self.sem_2 = nn.Sequential(
-            torch.nn.Conv3d(nf_factor * self.nf, nf_factor // 2 * self.nf, 3, 1, 1, bias=self.use_bias),
+            nn.Conv3d(nf_factor * self.nf, nf_factor // 2 * self.nf, 3, 1, 1, bias=self.use_bias),
             nn.LeakyReLU(0.2, True),
             nn.BatchNorm3d(nf_factor // 2 * self.nf),
-            # torch.nn.Conv3d(nf_factor // 2 * self.nf, nf_factor // 2 * self.nf, (kz[12], 3, 3), 1, 1, bias=self.use_bias),
+            # nn.Conv3d(nf_factor // 2 * self.nf, nf_factor // 2 * self.nf, (kz[12], 3, 3), 1, 1, bias=self.use_bias),
             # nn.LeakyReLU(0.2, True),
             # nn.BatchNorm3d(nf_factor // 2 * self.nf)
         )
         # TODO
         self.sem_3 = nn.Sequential(
-            # torch.nn.Conv3d(nf_factor // 2 * self.nf, 3 * self.nf, 3, 1, 1, bias=self.use_bias),
-            # nn.LeakyReLU(0.2, True),
-            # nn.BatchNorm3d(3 * self.nf),
-            # torch.nn.Conv3d(3 * self.nf, self.nf, (kz[12], 3, 3), 1, 1, bias=self.use_bias),
-            # nn.LeakyReLU(0.2, True),
-            # nn.BatchNorm3d(self.nf),
-            # torch.nn.Conv3d(3 * self.nf, self.n_classes, (kz[12], 3, 3), 1, 1, bias=self.use_bias)
-            torch.nn.Conv3d(nf_factor // 2 * self.nf, self.n_classes, (kz[12], 3, 3), 1, 1, bias=self.use_bias)
+            nn.Conv3d(nf_factor // 2 * self.nf, 3 * self.nf, 3, 1, 1, bias=self.use_bias),
+            nn.LeakyReLU(0.2, True),
+            nn.BatchNorm3d(3 * self.nf),
+            nn.Conv3d(3 * self.nf, self.n_classes, (kz[12], 3, 3), 1, 1, bias=self.use_bias)
         )
 
         num_params_geo = count_num_model_params(self.geo_0) + count_num_model_params(
@@ -566,9 +564,10 @@ class Generator(nn.Module):
             out_color = torch.clamp(out_color, -1., 1.)
 
             if pred_semantic:
+                semantic = x.clone()
                 if self.input_mask:
-                    x[:, 1:4, :, :, :] = x_color * (1 - mask) + mask
-                semantic = self.sem_0(x)
+                    semantic[:, 1:4, :, :, :] = x_color * (1 - mask) + mask
+                semantic = self.sem_0(semantic)
                 if self.pass_geo_feats and self.pass_color_feats:
                     pass_geo = self.sem_0_geo(geo)
                     pass_color = self.sem_0_color(color)

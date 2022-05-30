@@ -11,8 +11,8 @@ class RayCastRGBDFunction(Function):
     @staticmethod
     def forward(ctx, locs, vals_sdf, vals_colors, vals_normals, vals_semantic, view_matrix_inv, intrinsic_params,
                 dims3d, width, height, depth_min, depth_max, thresh_sample_dist, ray_increment, image_color,
-                image_depth, image_normal, image_semantic, sparse_mapping, mapping3dto2d, mapping3dto2d_num, d_color, d_depth, d_normal,
-                d_semantic):
+                image_depth, image_normal, image_semantic, sparse_mapping, mapping3dto2d, mapping3dto2d_num, d_color,
+                d_depth, d_normal, d_semantic):
         if locs.shape[0] > mapping3dto2d.shape[0]:
             print('ERROR: locs size %s vs mapping3dto2d size %s' % (str(locs.shape), str(mapping3dto2d.shape)))
             locs = locs[:mapping3dto2d.shape[0]]
@@ -34,15 +34,13 @@ class RayCastRGBDFunction(Function):
         return image_color, image_depth, image_normal, image_semantic
 
     @staticmethod
-    def backward(ctx, grad_color, grad_depth, grad_normal, grad_semantic):  # TODO add semantics
+    def backward(ctx, grad_color, grad_depth, grad_normal, grad_semantic):
         sparse_mapping, mapping3dto2d, mapping3dto2d_num, dims, d_color, d_depth, d_normal, d_semantic = ctx.saved_variables
         raycast_rgbd_cuda.backward(
             grad_color.contiguous(), grad_depth.contiguous(), grad_normal.contiguous(), grad_semantic.contiguous(),
             sparse_mapping, mapping3dto2d, mapping3dto2d_num, dims, d_color, d_depth, d_normal, d_semantic)
-
-        return None, d_depth[:dims[4]], d_color[:dims[4]], d_normal[:dims[4]], d_semantic[:dims[4]], None, None, None, \
-               None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None
-
+        return None, d_depth[:dims[4]], d_color[:dims[4]], d_normal[:dims[4]], d_semantic[:dims[
+            4]], None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None
 
 class RaycastRGBD(nn.Module):
     def __init__(self, batch_size, dims3d, width, height, depth_min, depth_max, thresh_sample_dist, ray_increment,
@@ -61,7 +59,7 @@ class RaycastRGBD(nn.Module):
         self.image_depth = torch.zeros(batch_size * max_num_frames, height, width).cuda()
         self.image_normal = torch.zeros(batch_size * max_num_frames, height, width, 3).cuda()
         self.image_color = torch.zeros(batch_size * max_num_frames, height, width, 3).cuda()
-        self.image_semantic = (-1 * torch.ones(batch_size * max_num_frames, height, width, 1)).cuda()
+        self.image_semantic = (41 * torch.ones(batch_size * max_num_frames, height, width, 1)).cuda()
         self.mapping3dto2d = torch.zeros(batch_size * max_num_frames * max_num_locs_per_sample, max_pixels_per_voxel,
                                          dtype=torch.int).cuda()  # no color trilerp -> only pixel index here
         self.mapping3dto2d_num = torch.zeros(batch_size * max_num_frames * max_num_locs_per_sample,
@@ -70,16 +68,14 @@ class RaycastRGBD(nn.Module):
         self.d_color = torch.zeros(batch_size * max_num_locs_per_sample, 3).cuda()
         self.d_normal = torch.zeros(batch_size * max_num_locs_per_sample, 3).cuda()
         self.d_depth = torch.zeros(batch_size * max_num_locs_per_sample, 1).cuda()
-        self.d_semantic = torch.zeros(batch_size * max_num_locs_per_sample, 1).cuda()
+        self.d_semantic = torch.zeros(batch_size * max_num_locs_per_sample, 41).cuda()
 
     def get_max_num_locs_per_sample(self):
         return self.max_num_locs_per_sample
 
     def forward(self, locs, vals_sdf, vals_colors, vals_normals, vals_semantics, view_matrix, intrinsic_params):
         if vals_semantics is None:
-            vals_semantics = (-1 * torch.ones(vals_sdf.shape)).cuda()
-        else:
-            vals_semantics = vals_semantics.to(torch.float).cuda()
+            vals_semantics = (41 * torch.ones(vals_sdf.shape)).cuda()  # unlabeled class
         return RayCastRGBDFunction.apply(locs, vals_sdf, vals_colors, vals_normals, vals_semantics, view_matrix,
                                          intrinsic_params, self.dims3d, self.width, self.height, self.depth_min,
                                          self.depth_max, self.thresh_sample_dist, self.ray_increment, self.image_color,
