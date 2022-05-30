@@ -109,7 +109,7 @@ def plot_colortable(colors, title, emptycols=0):
 
 color_list = tuple(map(tuple, mapping_color/255))
 category_img = plot_colortable(color_list, "Category List")
-plt.show()
+# plt.show()
 category_img.savefig("Category_list.png")
 np.savez("category_color", mapping_color=mapping_color.astype(np.uint8))
 
@@ -178,8 +178,6 @@ for segmentation in listdir(seg_dir):
             [locs, sdf], [dimz, dimy, dimx], world2grid, known, colors, voxelsize = data_util.load_sdf(sdf_path, True,
                                                                                                        False, True,
                                                                                                        return_voxelsize=True)
-            sdf = data_util.sparse_to_dense_np(locs, sdf[:, np.newaxis], dimx, dimy, dimz, -float('inf'))
-            sdf = data_util.preprocess_sdf_pt(sdf, 3)
 
             points = point_sems.copy()
 
@@ -219,13 +217,16 @@ for segmentation in listdir(seg_dir):
                     o.write(i.read())  # copy everything
                     o.write(dense_sem.tobytes())
 
-            dense_sem_color = np.zeros([dimz, dimy, dimx, 3], dtype=np.uint8)
-            dense_sem_color[points[:, 2], points[:, 1], points[:, 0]] = mapping_color[points[:, 3]]
-            dense_sem_color = torch.from_numpy(dense_sem_color).byte()
-            mc.marching_cubes(torch.from_numpy(sdf), dense_sem_color, isovalue=0, truncation=10, thresh=10,
-                              output_filename=os.path.join(args.output_dir + 'mesh',
-                                                           segmentation + "_room" + str(region) + "__sem__" + str(
-                                                               sdf_number) + '.ply'))
+            # for debug
+            # sdf = data_util.sparse_to_dense_np(locs, sdf[:, np.newaxis], dimx, dimy, dimz, -float('inf'))
+            # sdf = data_util.preprocess_sdf_pt(sdf, 3)
+            # dense_sem_color = np.zeros([dimz, dimy, dimx, 3], dtype=np.uint8)
+            # dense_sem_color[points[:, 2], points[:, 1], points[:, 0]] = mapping_color[points[:, 3]]
+            # dense_sem_color = torch.from_numpy(dense_sem_color).byte()
+            # mc.marching_cubes(torch.from_numpy(sdf), dense_sem_color, isovalue=0, truncation=10, thresh=10,
+            #                   output_filename=os.path.join(args.output_dir + 'mesh',
+            #                                                segmentation + "_room" + str(region) + "__sem__" + str(
+            #                                                    sdf_number) + '.ply'))
 
             sdf_number += 1
 

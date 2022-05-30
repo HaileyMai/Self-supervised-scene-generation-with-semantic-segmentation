@@ -117,10 +117,10 @@ args.input_nf = 4
 UP_AXIS = 0
 _SPLITTER = ','
 # TODO just for debug
-args.max_epoch = 10
+args.max_epoch = 15
 args.batch_size = 2
-args.num_iters_geo_only = 60
-args.num_iters_before_semantic = 120
+args.num_iters_geo_only = 100
+args.num_iters_before_semantic = 195
 # args.num_iters_before_content = 80
 print(args)
 
