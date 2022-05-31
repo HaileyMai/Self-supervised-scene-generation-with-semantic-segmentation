@@ -43,6 +43,7 @@ parser.add_argument("--raw_category", type=str, default="raw_category",
                     help="column of mapping that contains the raw category names")
 parser.add_argument("--sdf_path", type=str, required=True, help="directory of the .sdf files")
 parser.add_argument("--output_dir", type=str, default=".", help="where to write the extended .sdf files")
+parser.add_argument("--samples_per_face", type=int, default=10, help="how many points are sampled from every face")
 
 args = parser.parse_args()
 print(args)
@@ -161,9 +162,21 @@ for segmentation in listdir(seg_dir):
             center_sem = [x, y, z, sem]
             point_sems += [center_sem]
 
-            # add corners
+            # add corners 
+            corners = []
             for i in range(3):
                 point_sem = [face_vertices[i]["x"], face_vertices[i]["y"], face_vertices[i]["z"], sem]
+                corners += [point_sem]
+            
+            point_sems += corners
+
+            #TODO random sampling for now, calculate how many are needed instead
+            for factors in np.random.dirichlet(np.ones(3), size=args.samples_per_face):
+                z = corners[0][2] * factors[0] + corners[1][2] * factors[1] + corners[2][2] * factors[2]
+                y = corners[0][1] * factors[0] + corners[1][1] * factors[1] + corners[2][1] * factors[2]
+                x = corners[0][0] * factors[0] + corners[1][0] * factors[1] + corners[2][0] * factors[2]
+
+                point_sem = [x, y, z, sem]
                 point_sems += [point_sem]
 
         point_sems = np.array(point_sems)
