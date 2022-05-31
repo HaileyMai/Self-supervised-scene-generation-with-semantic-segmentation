@@ -43,6 +43,7 @@ parser.add_argument("--raw_category", type=str, default="raw_category",
                     help="column of mapping that contains the raw category names")
 parser.add_argument("--sdf_path", type=str, required=True, help="directory of the .sdf files")
 parser.add_argument("--output_dir", type=str, default=".", help="where to write the extended .sdf files")
+parser.add_argument("--truncation", type=float, default=3, help="truncation in voxels")
 
 args = parser.parse_args()
 print(args)
@@ -58,6 +59,7 @@ mapping_color = np.zeros((42, 3))
 for i in range(42):
     mapping_color[i] = np.random.choice(range(256), size=3)
 mapping_color[-1] = np.array([0, 0, 0])
+mapping_color[0] = np.array([255, 255, 255])
 
 
 def plot_colortable(colors, title, emptycols=0):
@@ -87,7 +89,7 @@ def plot_colortable(colors, title, emptycols=0):
     ax.set_axis_off()
     ax.set_title(title, fontsize=24, loc="left", pad=10)
 
-    for i in range(n):
+    for i in range(n):   # skip void
         row = i % nrows
         col = i // nrows
         y = row * cell_height
@@ -108,7 +110,7 @@ def plot_colortable(colors, title, emptycols=0):
 
 
 color_list = tuple(map(tuple, mapping_color/255))
-category_img = plot_colortable(color_list, "Category List")
+category_img = plot_colortable(color_list[:], "Category List")
 # plt.show()
 category_img.savefig("Category_list.png")
 np.savez("category_color", mapping_color=mapping_color.astype(np.uint8))
@@ -200,8 +202,8 @@ for segmentation in listdir(seg_dir):
 
             points = points.astype(int)
 
-            # convert to dense to keep format the same as colors
-            dense_sem = np.zeros([dimz, dimy, dimx], dtype=np.uint8)
+            # convert to dense to keep format the same as colors, default unlabeled
+            dense_sem = 41 * np.ones([dimz, dimy, dimx], dtype=np.uint8)
             dense_sem[points[:, 2], points[:, 1], points[:, 0]] = points[:, 3]  # TODO store in xyz or zyx order?
 
             # print([dimz, dimy, dimx])
@@ -218,15 +220,16 @@ for segmentation in listdir(seg_dir):
                     o.write(dense_sem.tobytes())
 
             # for debug
-            # sdf = data_util.sparse_to_dense_np(locs, sdf[:, np.newaxis], dimx, dimy, dimz, -float('inf'))
-            # sdf = data_util.preprocess_sdf_pt(sdf, 3)
             # dense_sem_color = np.zeros([dimz, dimy, dimx, 3], dtype=np.uint8)
             # dense_sem_color[points[:, 2], points[:, 1], points[:, 0]] = mapping_color[points[:, 3]]
             # dense_sem_color = torch.from_numpy(dense_sem_color).byte()
             # mc.marching_cubes(torch.from_numpy(sdf), dense_sem_color, isovalue=0, truncation=10, thresh=10,
-            #                   output_filename=os.path.join(args.output_dir + 'mesh',
-            #                                                segmentation + "_room" + str(region) + "__sem__" + str(
-            #                                                    sdf_number) + '.ply'))
+            #                   output_filename=os.path.join(args.output_dir + 'mesh', segmentation + "_room" +
+            #                                                str(region) + "__sem__" + str(sdf_number) + '.ply'))
+            # colors = torch.from_numpy(colors).byte()
+            # mc.marching_cubes(torch.from_numpy(sdf), colors, isovalue=0, truncation=10, thresh=10,
+            #                   output_filename=os.path.join(args.output_dir + 'mesh', segmentation + "_room" +
+            #                                                str(region) + "__color__" + str(sdf_number) + '.ply'))
 
             sdf_number += 1
 

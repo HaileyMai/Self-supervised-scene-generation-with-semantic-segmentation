@@ -117,10 +117,10 @@ args.input_nf = 4
 UP_AXIS = 0
 _SPLITTER = ','
 # TODO just for debug
-args.max_epoch = 15
+args.max_epoch = 12
 args.batch_size = 2
-args.num_iters_geo_only = 100
-args.num_iters_before_semantic = 195
+args.num_iters_geo_only = 0
+args.num_iters_before_semantic = 0
 # args.num_iters_before_content = 80
 print(args)
 
@@ -623,7 +623,7 @@ def train(epoch, iter, dataloader, log_file, output_save):
                 else:
                     target2d = normals
                 target2d = target2d.permute(0, 3, 1, 2).contiguous()
-                if pred_semantic:
+                if pred_semantic:  # TODO
                     target2d_label = raycast_semantic.detach()
                     target2d_label[target2d_label == -float('inf')] = 41
             color = None
@@ -632,7 +632,7 @@ def train(epoch, iter, dataloader, log_file, output_save):
             else:
                 color = torch.zeros(output_sdf[0].shape[0], 3).cuda()
             if pred_semantic:
-                semantic = output_semantic.to(torch.float) #TODO
+                semantic = output_semantic.to(torch.float)  # TODO
             else:
                 semantic = 41 * torch.ones(output_sdf[0].shape[0]).cuda()
             # prediction raycast
@@ -643,7 +643,7 @@ def train(epoch, iter, dataloader, log_file, output_save):
                     (raycast_color[:, :, :, 0] != -float('inf')).view(raycast_color.shape[0], -1), 1).float() / float(
                     args.style_width * args.style_height)
                 weight_sample_pred2d = torch.clamp(weight_sample_pred2d, 0, 0.3) / 0.3
-            if pred_semantic:
+            if pred_semantic:  # TODO
                 pred2d_label = raycast_semantic.detach()
                 pred2d_label[pred2d_label == -float('inf')] = 41
             # geo loss
@@ -765,7 +765,9 @@ def train(epoch, iter, dataloader, log_file, output_save):
                 synth[:, :3] = (synth[:, :3] + 1) * 0.5
                 target[:, :3] = (target[:, :3] + 1) * 0.5
 
-        output_visual = output_save and (t + 2 == num_batches or (iter > 0 and iter % 10000 == 0))
+        output_visual = True
+        # output_save and (
+        #         t + 2 == num_batches or t + 2 == num_batches // 2 or (iter > 0 and iter % 10000 == 0))
 
         train_losses.append(loss.item())
         iter += 1
@@ -837,8 +839,10 @@ def train(epoch, iter, dataloader, log_file, output_save):
                                        target_for_colors, target_for_semantics.cpu().numpy(), None,
                                        vis_tgt_images_color, vis_target_images_semantic,
                                        vis_pred_sdf, vis_pred_color, vis_pred_semantic,
-                                       None, vis_pred_images_color, vis_pred_images_semantic, sample['world2grid'].numpy(), args.truncation,
-                                       args.semantic_color, args.color_space, input_images=vis_input_images_color, pred_depth=vis_pred_depth,
+                                       None, vis_pred_images_color, vis_pred_images_semantic,
+                                       sample['world2grid'].numpy(), args.truncation,
+                                       args.semantic_color, args.color_space, input_images=vis_input_images_color,
+                                       pred_depth=vis_pred_depth,
                                        target_depth=vis_target_depth, pred_occ=pred_occ)
 
     return train_losses, train_lossocc, train_iouocc, train_losssdf, train_lossdepth, train_losscolor, train_losssemantic, train_lossdisc, train_lossdisc_real, train_lossdisc_fake, train_lossgen, train_lossstyle, train_losscontent, iter
@@ -1187,7 +1191,8 @@ def test(epoch, iter, dataloader, log_file, output_save):
                         pred_occ = (torch.nn.Sigmoid()(output_occ) > 0.5).cpu().numpy().astype(np.float32)
                 data_util.save_predictions(os.path.join(args.save, 'iter%d-epoch%d' % (iter, epoch), 'val'),
                                            np.arange(sdfs.shape[0]), sample['name'], inputs,
-                                           target_for_sdf.cpu().numpy(), target_for_colors, target_for_semantics, None, vis_tgt_images_color,
+                                           target_for_sdf.cpu().numpy(), target_for_colors, target_for_semantics, None,
+                                           vis_tgt_images_color,
                                            vis_pred_sdf, vis_pred_color, None, vis_pred_images_color,
                                            sample['world2grid'], args.truncation, args.color_space,
                                            pred_depth=vis_pred_depth, target_depth=vis_target_depth, pred_occ=pred_occ)

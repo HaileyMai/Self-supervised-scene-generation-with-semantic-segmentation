@@ -60,7 +60,8 @@ def dense_to_sparse_np(grid, thresh):
     return locs, values
 
 
-def load_sdf(file, load_sparse, load_known, load_color, is_sparse_file=True, color_file=None, load_semantic=False, return_voxelsize=False):
+def load_sdf(file, load_sparse, load_known, load_color, is_sparse_file=True, color_file=None, load_semantic=False,
+             return_voxelsize=False):
     # assert os.path.isfile(file)
     assert (not load_sparse and not load_known) or (load_sparse != load_known)
     assert (not load_sparse and not load_semantic) or (load_sparse != load_semantic)
@@ -401,7 +402,7 @@ def vis_depth_as_hsv(depths, depth_max):
 def vis_semantic(semantics, mapping_color):
     sz = semantics.shape
     semantics = semantics.flatten()
-    semantics = 359/2 * np.clip(semantics / 42, 0, 1)
+    semantics = 359 / 2 * np.clip(semantics / 42, 0, 1)
     semantics = np.stack([np.ones(semantics.shape[0]), np.ones(semantics.shape[0]) * 0.5, semantics], 1)
     return convert_hsvgrid_to_rgbgrid(semantics).reshape((sz[0], sz[1], sz[2], 3))
 
@@ -567,17 +568,18 @@ def convert_lab01_to_rgb_pt(colorgrid):
     return convert_lab_to_rgb_pt(colorgrid).view(sz)
 
 
-def map_label_to_color(semantics, semantic_color):#TODO more elegant?
+def map_label_to_color(semantics, semantic_color):  # TODO more elegant?
     dims = semantics.shape
     semantics = semantics.flatten().astype(np.int)
     sem_color = np.zeros((semantics.shape[0], 3))
     sem_color[:] = semantic_color[semantics]
-    return sem_color.reshape((dims[:-1]+(3,)))
+    return sem_color.reshape((dims[:-1] + (3,)))
 
 
 def save_predictions(output_path, indices, names, inputs, target_for_sdf, target_for_colors, target_for_semantics,
                      target3d_hier, target_images, target_semantic_images, output_sdf, output_color, output_semantic,
-                     output3d_hier, output_images, output_semantic_images, world2grids, truncation, semantic_color, color_space='rgb',
+                     output3d_hier, output_images, output_semantic_images, world2grids, truncation, semantic_color,
+                     color_space='rgb',
                      input_images=None, pred_depth=None, target_depth=None, pred_occ=None, thresh=1, aux_images=None):
     if not os.path.isdir(output_path):
         os.makedirs(output_path)
@@ -680,9 +682,15 @@ def save_predictions(output_path, indices, names, inputs, target_for_sdf, target
                 colors = sparse_to_dense_np(locs, output_color[k], dims[2], dims[1], dims[0], 0)
                 colors = torch.from_numpy(colors)
                 colors = colors.byte()
-            if pred_sdf_dense is not None:
-                mc.marching_cubes(torch.from_numpy(pred_sdf_dense), colors, isovalue=isovalue, truncation=trunc,
-                                  thresh=10, output_filename=os.path.join(output_path, name + 'pred-mesh' + ext))
+            if output_semantic is not None and output_semantic[k] is not None:
+                semantics = sparse_to_dense_np(locs, output_semantic[k], dims[2], dims[1], dims[0], 0)
+                dense_sem_color = map_label_to_color(semantics[..., None], semantic_color).astype(np.uint8)
+                dense_sem_color = torch.from_numpy(dense_sem_color).byte()
+                mc.marching_cubes(torch.from_numpy(pred_sdf_dense), dense_sem_color, isovalue=isovalue,
+                                  truncation=trunc, thresh=10,
+                                  output_filename=os.path.join(output_path, name + 'pred-sem-mesh' + ext))
+            mc.marching_cubes(torch.from_numpy(pred_sdf_dense), colors, isovalue=isovalue, truncation=trunc,
+                              thresh=10, output_filename=os.path.join(output_path, name + 'pred-mesh' + ext))
         if target_for_sdf is not None:
             target = target_for_sdf[k, 0]
             colors = None
@@ -693,7 +701,8 @@ def save_predictions(output_path, indices, names, inputs, target_for_sdf, target
                 semantics = target_for_semantics[k]
                 dense_sem_color = map_label_to_color(semantics, semantic_color).astype(np.uint8)
                 dense_sem_color = torch.from_numpy(dense_sem_color).byte()
-                mc.marching_cubes(torch.from_numpy(target), dense_sem_color, isovalue=isovalue, truncation=trunc, thresh=10,
+                mc.marching_cubes(torch.from_numpy(target), dense_sem_color, isovalue=isovalue, truncation=trunc,
+                                  thresh=10,
                                   output_filename=os.path.join(output_path, name + 'target-sem-mesh' + ext))
             mc.marching_cubes(torch.from_numpy(target), colors, isovalue=isovalue, truncation=trunc, thresh=10,
                               output_filename=os.path.join(output_path, name + 'target-mesh' + ext))
@@ -714,7 +723,7 @@ def save_predictions(output_path, indices, names, inputs, target_for_sdf, target
         if input_normal_images is not None:
             vis = np.clip((input_normal_images[k] + 1) * 0.5 * 255, 0, 255).astype(np.uint8)
             Image.fromarray(vis).save(os.path.join(output_path, name + '_input-normals.png'))
-        if target_semantic_images is not None:
+        if target_semantic_images is not None:  # TODO
             semantics = target_semantic_images[k]
             vis = map_label_to_color(semantics, semantic_color).astype(np.uint8)
             Image.fromarray(vis).save(os.path.join(output_path, name + '_target-semantics.png'))
