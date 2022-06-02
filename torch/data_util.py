@@ -723,14 +723,14 @@ def save_predictions(output_path, indices, names, inputs, target_for_sdf, target
         if input_normal_images is not None:
             vis = np.clip((input_normal_images[k] + 1) * 0.5 * 255, 0, 255).astype(np.uint8)
             Image.fromarray(vis).save(os.path.join(output_path, name + '_input-normals.png'))
-        if target_semantic_images is not None:  # TODO
+        if target_semantic_images is not None:
             semantics = target_semantic_images[k]
             vis = map_label_to_color(semantics, semantic_color).astype(np.uint8)
             Image.fromarray(vis).save(os.path.join(output_path, name + '_target-semantics.png'))
         if output_semantic_images is not None:
             semantics = output_semantic_images[k]
             vis = map_label_to_color(semantics, semantic_color).astype(np.uint8)
-            Image.fromarray(vis).save(os.path.join(output_path, name + '_output-semantics.png'))
+            Image.fromarray(vis).save(os.path.join(output_path, name + '_pred-semantics.png'))
         if pred_depth is not None:
             vis = np.clip(pred_depth[k] * 255, 0, 255).astype(np.uint8)
             Image.fromarray(vis).save(os.path.join(output_path, name + '_pred-depth.png'))
