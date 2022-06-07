@@ -89,7 +89,7 @@ def plot_colortable(colors, title, emptycols=0):
     ax.set_axis_off()
     ax.set_title(title, fontsize=24, loc="left", pad=10)
 
-    for i in range(n):   # skip void
+    for i in range(n):  # skip void
         row = i % nrows
         col = i // nrows
         y = row * cell_height
@@ -109,7 +109,7 @@ def plot_colortable(colors, title, emptycols=0):
     return fig
 
 
-color_list = tuple(map(tuple, mapping_color/255))
+color_list = tuple(map(tuple, mapping_color / 255))
 category_img = plot_colortable(color_list[:], "Category List")
 # plt.show()
 category_img.savefig("Category_list.png")
@@ -133,6 +133,12 @@ for segmentation in listdir(seg_dir):
     ply_dir = path.join(unzip_path, segmentation, "region_segmentations")
     region = 0
     while path.exists(path.join(ply_dir, "region" + str(region) + ".ply")):
+        sdf_base = path.join(args.sdf_path, segmentation + "_room" + str(region) + "__cmp__")
+        sdf_number = 0
+        if not path.exists(sdf_base + str(sdf_number) + ".sdf"):
+            print("No sdf files.")
+            break
+
         print(f"-region {region}")
         semseg_path = path.join(ply_dir, "region" + str(region) + ".semseg.json")
         with open(semseg_path) as f:
@@ -157,7 +163,7 @@ for segmentation in listdir(seg_dir):
             if raw_category in mapping:
                 sem = mapping[raw_category]
             else:
-                sem = 0  # default
+                sem = 41  # unlabeled as default
 
             # add center
             center_sem = [x, y, z, sem]
@@ -168,10 +174,10 @@ for segmentation in listdir(seg_dir):
             for i in range(3):
                 point_sem = [face_vertices[i]["x"], face_vertices[i]["y"], face_vertices[i]["z"], sem]
                 corners += [point_sem]
-            
+
             point_sems += corners
 
-            #TODO random sampling for now, calculate how many are needed instead
+            # TODO random sampling for now, calculate how many are needed instead
             for factors in np.random.dirichlet(np.ones(3), size=args.samples_per_face):
                 z = corners[0][2] * factors[0] + corners[1][2] * factors[1] + corners[2][2] * factors[2]
                 y = corners[0][1] * factors[0] + corners[1][1] * factors[1] + corners[2][1] * factors[2]
@@ -182,16 +188,11 @@ for segmentation in listdir(seg_dir):
 
         point_sems = np.array(point_sems)
 
-        sdf_base = path.join(args.sdf_path, segmentation + "_room" + str(region) + "__cmp__")
-        sdf_number = 0
-
-        # TODO checkout before to stop extracting region.ply if no sdf exists
         while path.exists(sdf_base + str(sdf_number) + ".sdf"):
             # print(f"--sdf {sdf_number}")
             sdf_path = sdf_base + str(sdf_number) + ".sdf"
-            [locs, sdf], [dimz, dimy, dimx], world2grid, known, colors, voxelsize = data_util.load_sdf(sdf_path, True,
-                                                                                                       False, True,
-                                                                                                       return_voxelsize=True)
+            [locs, sdf], [dimz, dimy, dimx], world2grid, known, colors, voxelsize = data_util.load_sdf(
+                sdf_path, True, False, True, return_voxelsize=True)
 
             points = point_sems.copy()
 
@@ -220,8 +221,10 @@ for segmentation in listdir(seg_dir):
 
             # print([dimz, dimy, dimx])
             # print(points)
-            # print(points.shape)
             # print(np.bincount(points[:, 3]))
+            # print(points.shape)
+            # print(locs.shape)
+            # print(points.shape[0] / locs.shape[0])  # TODO assign semantics for each loc
 
             out_path = path.join(args.output_dir,
                                  segmentation + "_room" + str(region) + "__sem__" + str(sdf_number) + ".sdf")
@@ -231,7 +234,7 @@ for segmentation in listdir(seg_dir):
                     o.write(i.read())  # copy everything
                     o.write(dense_sem.tobytes())
 
-            # for debug
+            # visualization for debug
             # dense_sem_color = np.zeros([dimz, dimy, dimx, 3], dtype=np.uint8)
             # dense_sem_color[points[:, 2], points[:, 1], points[:, 0]] = mapping_color[points[:, 3]]
             # dense_sem_color = torch.from_numpy(dense_sem_color).byte()

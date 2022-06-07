@@ -579,8 +579,8 @@ def map_label_to_color(semantics, semantic_color):  # TODO more elegant?
 def save_predictions(output_path, indices, names, inputs, target_for_sdf, target_for_colors, target_for_semantics,
                      target3d_hier, target_images, target_semantic_images, output_sdf, output_color, output_semantic,
                      output3d_hier, output_images, output_semantic_images, world2grids, truncation, semantic_color,
-                     color_space='rgb',
-                     input_images=None, pred_depth=None, target_depth=None, pred_occ=None, thresh=1, aux_images=None):
+                     color_space='rgb', input_images=None, pred_depth=None, target_depth=None, pred_occ=None, thresh=1,
+                     aux_images=None):
     if not os.path.isdir(output_path):
         os.makedirs(output_path)
     if target_for_sdf is not None:
