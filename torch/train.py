@@ -54,8 +54,6 @@ parser.add_argument('--lr', type=float, default=0.0001, help='learning rate, def
 parser.add_argument('--d_lr_factor', type=float, default=4, help='lr disc = d_lr_factor*lr')
 parser.add_argument('--weight_decay', type=float, default=0.0, help='weight decay.')
 parser.add_argument('--num_iters_geo_only', type=int, default=1000, help='#iters to train geo before introducing color')
-parser.add_argument('--num_iters_before_semantic', type=int, default=60000,
-                    help='#iters to train geo before predicting semantic')
 parser.add_argument('--num_iters_before_content', type=int, default=60000,
                     help='#iters to train geo before introducing color')
 parser.add_argument('--weight_occ_loss', type=float, default=1.0, help='weight geo loss vs rest (0 to disable).')
@@ -116,12 +114,11 @@ args.input_nf = 4
 UP_AXIS = 0
 _SPLITTER = ','
 # TODO just for debug
-args.max_epoch = 10
-args.batch_size = 2
-args.num_iters_geo_only = 120
-# args.num_iters_before_semantic = 360 TODO simultaneously predict color and semantic?
-# args.num_iters_before_content = 80
-args.save = './logs0'
+args.max_epoch = 20
+args.batch_size = 1
+args.num_iters_geo_only = 20
+args.save = './logs_overift_no'
+args.weight_semantic_loss = 0
 pred_semantic_3d = True
 print(args)
 
@@ -441,13 +438,13 @@ def train(epoch, iter, dataloader, log_file, output_save):
         known = sample['known']
         colors = sample['colors'].cuda()
         target_for_semantics = sample['semantics']
-        if args.weight_semantic_loss > 0:
-            if target_for_semantics is None:
+        if target_for_semantics is None:
+            target_for_semantics = 41 * torch.ones(sdfs.detach().shape).cuda()
+            if args.weight_semantic_loss > 0:
                 print("No target for semantics, deactivate semantic loss.")
                 args.weight_semantic_loss = 0
-                target_for_semantics = 41 * torch.ones(sdfs.detach().shape).cuda()
-            else:
-                target_for_semantics = target_for_semantics.cuda()
+        else:
+            target_for_semantics = target_for_semantics.cuda()
 
         if args.use_loss_masking:
             known = (known <= 1).cuda()
@@ -466,8 +463,6 @@ def train(epoch, iter, dataloader, log_file, output_save):
             optimizer_disc.zero_grad()
         optimizer.zero_grad()
         mask = sample['mask'].cuda()
-        output_occ = None
-        torch.autograd.set_detect_anomaly(True)
         output_occ, output_sdf, output_color, output_semantic = model(
             inputs, mask, pred_sdf=pred_sdf, pred_color=pred_color, pred_semantic=pred_semantic)
         output_coarse_sdf = None
@@ -511,14 +506,6 @@ def train(epoch, iter, dataloader, log_file, output_save):
         if pred_semantic:
             output_semantic = output_semantic[locs[:, -1], :, locs[:, 0], locs[:, 1], locs[:, 2]]
             target_sem = target_for_semantics[locs[:, -1], :, locs[:, 0], locs[:, 1], locs[:, 2]].squeeze()
-            output_sem = output_semantic[target_sem.detach() < 41].clone()
-            target_sem = target_sem[target_sem.detach() < 41]
-            if pred_semantic_3d:
-                loss_semantic_3d = torch.nn.functional.cross_entropy(output_sem, target_sem,
-                                                                     weight=args.weight_semantic_class)
-                loss += loss_semantic_3d
-                train_losssemantic.append(loss_semantic_3d.item())
-            _, output_semantic = torch.max(output_semantic.detach(), dim=-1, keepdim=True)
         else:
             output_semantic = None
 
@@ -595,11 +582,11 @@ def train(epoch, iter, dataloader, log_file, output_save):
                 colors = target_for_colors[locs[:, -1], locs[:, 0], locs[:, 1], locs[:, 2], :].float() / 255.0
                 target_normals = loss_util.compute_normals_sparse(locs, vals, target_for_sdf.shape[2:],
                                                                   transform=torch.inverse(view_matrix))
-                target_semantics = target_for_semantics.to(torch.float)[locs[:, -1], :, locs[:, 0], locs[:, 1],
-                                   locs[:, 2]].contiguous()  # TODO float to int
+                target_semantics = target_for_semantics[locs[:, -1], :, locs[:, 0], locs[:, 1], locs[:, 2]]
+                target_semantics_onehot = F.one_hot(target_semantics[:, 0].long())[..., :-1].float().contiguous()
                 # target raycast
                 raycast_color, _, raycast_normal, raycast_semantic = raycaster_rgbd(
-                    locs, vals, colors.contiguous(), target_normals, target_semantics, view_matrix, intrinsics)
+                    locs, vals, colors.contiguous(), target_normals, target_semantics_onehot, view_matrix, intrinsics)
                 if args.filter_proj_tgt:
                     invalid = loss_util.filter_proj_target(raycast_color, args.color_thresh, args.color_space)
                     invalid = invalid.unsqueeze(3).repeat(1, 1, 1, 3) | (raycast_color == -float('inf'))
@@ -622,16 +609,17 @@ def train(epoch, iter, dataloader, log_file, output_save):
                     target2d = normals
                 target2d = target2d.permute(0, 3, 1, 2).contiguous()
                 if pred_semantic:
-                    target2d_label = raycast_semantic.clone()
-                    target2d_label[target2d_label == -float('inf')] = 41
+                    cat = torch.cat((raycast_semantic.clone(), torch.ones(raycast_semantic.shape[:-1] + (1,)).cuda()), dim=-1)
+                    _, target2d_label = torch.max(cat, dim=-1, keepdim=True)
+                    target2d_label = target2d_label.to(torch.uint8)
             if pred_color:
                 color = (output_color[1] + 1) * 0.5
             else:
                 color = torch.zeros(output_sdf[0].shape[0], 3).cuda()
             if pred_semantic:
-                semantic = output_semantic.to(torch.float)
+                semantic = output_semantic.clone()
             else:
-                semantic = 41 * torch.ones(output_sdf[0].shape[0]).cuda()
+                semantic = 41 * torch.ones(output_sdf[0].shape[:-1] + (41,)).cuda()
             # prediction raycast
             raycast_color, raycast_depth, raycast_normal, raycast_semantic = raycaster_rgbd(
                 output_sdf[0].cuda(), output_sdf[1], color, output_normals, semantic, view_matrix, intrinsics)
@@ -640,9 +628,7 @@ def train(epoch, iter, dataloader, log_file, output_save):
                     (raycast_color[:, :, :, 0] != -float('inf')).view(raycast_color.shape[0], -1), 1).float() / float(
                     args.style_width * args.style_height)
                 weight_sample_pred2d = torch.clamp(weight_sample_pred2d, 0, 0.3) / 0.3
-            if pred_semantic:  # TODO
-                pred2d_label = raycast_semantic.detach()
-                pred2d_label[pred2d_label == -float('inf')] = 41
+
             # geo loss
             raycast_depth = raycast_depth.unsqueeze(1) * args.voxelsize
             valid = (raycast_depth != -float('inf')) & (images_depth != 0)
@@ -664,14 +650,6 @@ def train(epoch, iter, dataloader, log_file, output_save):
             raycast = raycast.permute(0, 3, 1, 2).contiguous()
             valid = raycast.detach() != -float('inf')
             num_valid = torch.sum(valid).item()
-            if not pred_semantic_3d and pred_semantic:  # TODO 2D semantic loss
-                print(pred2d_label[target2d_label < 41].shape)
-                print(target2d_label[target2d_label < 41].shape)
-                loss_semantic_2d = torch.nn.functional.cross_entropy(pred2d_label[target2d_label < 41],
-                                                                     target2d_label[target2d_label < 41],
-                                                                     weight=args.weight_semantic_class)
-                loss += loss_semantic_2d
-                train_losssemantic.append(loss_semantic_2d.item())
             if use_disc and args.patch_disc and args.patch_size < args.style_height:
                 valid = (disc.compute_valids(valid[:, -1, :, :].float().unsqueeze(1)) > args.valid_thresh).squeeze(1)
                 weight_color_disc = None
@@ -753,6 +731,21 @@ def train(epoch, iter, dataloader, log_file, output_save):
             else:
                 synth = None
                 target = None
+            if pred_semantic:  # semantic loss
+                if pred_semantic_3d:  # 3D
+                    output_sem = output_semantic[target_sem.detach() < 41].clone()
+                    target_sem = target_sem[target_sem.detach() < 41]
+                    loss_semantic = F.cross_entropy(output_sem, target_sem, weight=args.weight_semantic_class)
+                else:  # 2D
+                    valid = torch.logical_and(target2d_label[..., 0] < 41, raycast_semantic[..., 0] != -float('inf'))
+                    loss_semantic = F.cross_entropy(raycast_semantic[valid].view(-1, raycast_semantic.shape[-1]),
+                                                    target2d_label[valid].view(-1))
+                loss += loss_semantic
+                train_losssemantic.append(loss_semantic.item())
+                cat = torch.cat((raycast_semantic.detach(), torch.ones(raycast_semantic.shape[:-1] + (1,)).cuda()),
+                                dim=-1)
+                _, pred2d_label = torch.max(cat, dim=-1, keepdim=True)
+                pred2d_label = pred2d_label.to(torch.uint8)
         loss.backward()
         optimizer.step()
 
@@ -799,7 +792,7 @@ def train(epoch, iter, dataloader, log_file, output_save):
                     if output_color is not None:
                         vis_pred_color[b] = output_color[mask].cpu().numpy()
                     if output_semantic is not None:
-                        vis_pred_semantic[b] = output_semantic[mask].cpu().numpy()
+                        vis_pred_semantic[b] = output_semantic.detach()[mask].cpu().numpy()
             inputs = inputs.cpu().numpy()
             target_for_colors = target_for_colors.cpu().numpy()
             vis_pred_images_color = None
@@ -827,7 +820,7 @@ def train(epoch, iter, dataloader, log_file, output_save):
             if pred2d_label is not None:
                 vis_pred_images_semantic = pred2d_label.cpu().numpy()
                 vis_target_images_semantic = target2d_label.cpu().numpy()
-            if pred_semantic is not None:
+            if pred_semantic:
                 target_for_semantics = target_for_semantics.cpu().numpy()
             else:
                 target_for_semantics = None
@@ -883,14 +876,10 @@ def test(epoch, iter, dataloader, log_file, output_save):
             known = sample['known']
             colors = sample['colors'].cuda()
             target_for_semantics = sample['semantics']
-
-            if args.weight_semantic_loss > 0:
-                if target_for_semantics is None:
-                    print("No target for semantics, deactivate semantic loss.")
-                    args.weight_semantic_loss = 0
-                    target_for_semantics = 41 * torch.ones(sdfs.detach().shape).cuda()
-                else:
-                    target_for_semantics = target_for_semantics.cuda()
+            if target_for_semantics is None:
+                target_for_semantics = 41 * torch.ones(sdfs.detach().shape).cuda()
+            else:
+                target_for_semantics = target_for_semantics.cuda()
 
             if args.use_loss_masking:
                 known = (known <= 1).cuda()
@@ -906,7 +895,6 @@ def test(epoch, iter, dataloader, log_file, output_save):
             compute_2dcontent = iter > args.num_iters_before_content and args.weight_content_loss > 0
 
             mask = sample['mask'].cuda()
-            output_occ = None
             output_occ, output_sdf, output_color, output_semantic = model(
                 inputs, mask, pred_sdf=pred_sdf, pred_color=pred_color, pred_semantic=pred_semantic)
             output_coarse_sdf = None
@@ -950,14 +938,6 @@ def test(epoch, iter, dataloader, log_file, output_save):
             if pred_semantic:
                 output_semantic = output_semantic[locs[:, -1], :, locs[:, 0], locs[:, 1], locs[:, 2]]
                 target_sem = target_for_semantics[locs[:, -1], :, locs[:, 0], locs[:, 1], locs[:, 2]].squeeze()
-                output_sem = output_semantic[target_sem.detach() < 41].clone()
-                target_sem = target_sem[target_sem.detach() < 41]
-                if pred_semantic_3d:
-                    loss_semantic_3d = torch.nn.functional.cross_entropy(output_sem, target_sem,
-                                                                         weight=args.weight_semantic_class)
-                    loss += loss_semantic_3d
-                    val_losssemantic.append(loss_semantic_3d.item())
-                _, output_semantic = torch.max(output_semantic.detach(), dim=-1, keepdim=True)
             else:
                 output_semantic = None
 
@@ -984,6 +964,7 @@ def test(epoch, iter, dataloader, log_file, output_save):
 
                 images_depth = images_depth.unsqueeze(1)
                 images_normals = depth2normals(images_depth, intrinsics)
+
                 if use_disc and images_normals is None:
                     continue
                 output_normals = loss_util.compute_normals_sparse(output_sdf[0].cuda(), output_sdf[1],
@@ -1031,11 +1012,11 @@ def test(epoch, iter, dataloader, log_file, output_save):
                     colors = target_for_colors[locs[:, -1], locs[:, 0], locs[:, 1], locs[:, 2], :].float() / 255.0
                     target_normals = loss_util.compute_normals_sparse(locs, vals, target_for_sdf.shape[2:],
                                                                       transform=torch.inverse(view_matrix))
-                    target_semantics = target_for_semantics.to(torch.float)[locs[:, -1], :, locs[:, 0], locs[:, 1],
-                                       locs[:, 2]].contiguous()  # TODO float to int
+                    target_semantics = target_for_semantics[locs[:, -1], :, locs[:, 0], locs[:, 1], locs[:, 2]]
+                    target_semantics_onehot = F.one_hot(target_semantics[:, 0].long())[..., :-1].float().contiguous()
                     # target raycast
                     raycast_color, _, raycast_normal, raycast_semantic = raycaster_rgbd(
-                        locs, vals, colors.contiguous(), target_normals, target_semantics, view_matrix, intrinsics)
+                        locs, vals, colors.contiguous(), target_normals, target_semantics_onehot, view_matrix, intrinsics)
                     if args.filter_proj_tgt:
                         invalid = loss_util.filter_proj_target(raycast_color, args.color_thresh, args.color_space)
                         invalid = invalid.unsqueeze(3).repeat(1, 1, 1, 3) | (raycast_color == -float('inf'))
@@ -1058,16 +1039,17 @@ def test(epoch, iter, dataloader, log_file, output_save):
                         target2d = normals
                     target2d = target2d.permute(0, 3, 1, 2).contiguous()
                     if pred_semantic:
-                        target2d_label = raycast_semantic.clone()
-                        target2d_label[target2d_label == -float('inf')] = 41
+                        cat = torch.cat((raycast_semantic.clone(), torch.ones(raycast_semantic.shape[:-1] + (1,)).cuda()), dim=-1)
+                        _, target2d_label = torch.max(cat, dim=-1, keepdim=True)
+                        target2d_label = target2d_label.to(torch.uint8)
                 if pred_color:
                     color = (output_color[1] + 1) * 0.5
                 else:
                     color = torch.zeros(output_sdf[0].shape[0], 3).cuda()
                 if pred_semantic:
-                    semantic = output_semantic.to(torch.float)
+                    semantic = output_semantic.clone()
                 else:
-                    semantic = 41 * torch.ones(output_sdf[0].shape[0]).cuda()
+                    semantic = 41 * torch.ones(output_sdf[0].shape[:-1] + (41,)).cuda()
                 # prediction raycast
                 raycast_color, raycast_depth, raycast_normal, raycast_semantic = raycaster_rgbd(
                     output_sdf[0].cuda(), output_sdf[1], color, output_normals, semantic, view_matrix, intrinsics)
@@ -1076,9 +1058,7 @@ def test(epoch, iter, dataloader, log_file, output_save):
                         (raycast_color[:, :, :, 0] != -float('inf')).view(raycast_color.shape[0], -1),
                         1).float() / float(args.style_width * args.style_height)
                     weight_sample_pred2d = torch.clamp(weight_sample_pred2d, 0, 0.3) / 0.3
-                if pred_semantic:  # TODO
-                    pred2d_label = raycast_semantic.detach()
-                    pred2d_label[pred2d_label == -float('inf')] = 41
+
                 # geo loss
                 raycast_depth = raycast_depth.unsqueeze(1) * args.voxelsize
                 valid = (raycast_depth != -float('inf')) & (images_depth != 0)
@@ -1087,24 +1067,17 @@ def test(epoch, iter, dataloader, log_file, output_save):
                 pred_depth = raycast_depth.detach()
                 target_depth = images_depth
                 val_lossdepth.append(loss_depth.item())
-                if args.weight_color_loss > 0:  # color loss
+                if pred_color:  # color loss
                     loss_color = loss_util.compute_2dcolor_loss(raycast_color, images_color.permute(0, 2, 3, 1),
                                                                 weight_color)
                     loss += args.weight_color_loss * loss_color
                     val_losscolor.append(loss_color.item())
-                if pred_color:
                     raycast = torch.cat([raycast_color, raycast_normal], 3)
                 else:
                     raycast = raycast_normal
                 raycast = raycast.permute(0, 3, 1, 2).contiguous()
                 valid = raycast.detach() != -float('inf')
                 num_valid = torch.sum(valid).item()
-                if not pred_semantic_3d and pred_semantic:  # semantic loss
-                    loss_semantic_2d = torch.nn.functional.cross_entropy(pred2d_label[target2d_label < 41],
-                                                                         target2d_label[target2d_label < 41],
-                                                                         weight=args.weight_semantic_class)
-                    loss += loss_semantic_2d
-                    val_losssemantic.append(loss_semantic_2d.item())
                 if use_disc and args.patch_disc and args.patch_size < args.style_height:
                     valid = (disc.compute_valids(valid[:, -1, :, :].float().unsqueeze(1)) > args.valid_thresh).squeeze(
                         1)
@@ -1184,6 +1157,22 @@ def test(epoch, iter, dataloader, log_file, output_save):
                 else:
                     synth = None
                     target = None
+                if pred_semantic:  # semantic loss
+                    if pred_semantic_3d:  # 3D
+                        output_sem = output_semantic[target_sem.detach() < 41].clone()
+                        target_sem = target_sem[target_sem.detach() < 41]
+                        loss_semantic = F.cross_entropy(output_sem, target_sem, weight=args.weight_semantic_class)
+                    else:  # 2D
+                        valid = torch.logical_and(target2d_label[..., 0] < 41,
+                                                  raycast_semantic[..., 0] != -float('inf'))
+                        loss_semantic = F.cross_entropy(raycast_semantic[valid].view(-1, raycast_semantic.shape[-1]),
+                                                        target2d_label[valid].view(-1))
+                    loss += loss_semantic
+                    val_losssemantic.append(loss_semantic.item())
+                    cat = torch.cat((raycast_semantic.detach(), torch.ones(raycast_semantic.shape[:-1] + (1,)).cuda()),
+                                    dim=-1)
+                    _, pred2d_label = torch.max(cat, dim=-1, keepdim=True)
+                    pred2d_label = pred2d_label.to(torch.uint8)
 
             if output_color is not None:
                 output_color = (output_color[1] + 1) * 0.5
@@ -1236,7 +1225,7 @@ def test(epoch, iter, dataloader, log_file, output_save):
                 if pred2d_label is not None:
                     vis_pred_images_semantic = pred2d_label.cpu().numpy()
                     vis_target_images_semantic = target2d_label.cpu().numpy()
-                if pred_semantic is not None:
+                if pred_semantic:
                     target_for_semantics = target_for_semantics.cpu().numpy()
                 else:
                     target_for_semantics = None

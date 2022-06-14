@@ -672,7 +672,7 @@ def save_predictions(output_path, indices, names, inputs, target_for_sdf, target
                 colors = (inputs[k, 1:4] * 255).transpose(1, 2, 3, 0)
                 colors = torch.from_numpy(colors.astype(np.uint8)).contiguous()
             mc.marching_cubes(torch.from_numpy(input_sdf), colors.byte(), isovalue=isovalue, truncation=trunc,
-                              thresh=10, output_filename=os.path.join(output_path, name + 'input-mesh' + ext))
+                              thresh=10, output_filename=os.path.join(output_path, name + '_input-mesh' + ext))
         if output_sdf[k] is not None:
             locs = output_sdf[k][0][:, :3]
             pred_sdf_dense = sparse_to_dense_np(locs, output_sdf[k][1][:, np.newaxis], dims[2], dims[1], dims[0],
@@ -683,14 +683,14 @@ def save_predictions(output_path, indices, names, inputs, target_for_sdf, target
                 colors = torch.from_numpy(colors)
                 colors = colors.byte()
             if output_semantic is not None and output_semantic[k] is not None:
-                semantics = sparse_to_dense_np(locs, output_semantic[k], dims[2], dims[1], dims[0], 0)
+                semantics = np.argmax(sparse_to_dense_np(locs, output_semantic[k], dims[2], dims[1], dims[0], 0), axis=-1)
                 dense_sem_color = map_label_to_color(semantics[..., None], semantic_color).astype(np.uint8)
                 dense_sem_color = torch.from_numpy(dense_sem_color).byte()
                 mc.marching_cubes(torch.from_numpy(pred_sdf_dense), dense_sem_color, isovalue=isovalue,
                                   truncation=trunc, thresh=10,
-                                  output_filename=os.path.join(output_path, name + 'pred-sem-mesh' + ext))
+                                  output_filename=os.path.join(output_path, name + '_pred-sem-mesh' + ext))
             mc.marching_cubes(torch.from_numpy(pred_sdf_dense), colors, isovalue=isovalue, truncation=trunc,
-                              thresh=10, output_filename=os.path.join(output_path, name + 'pred-mesh' + ext))
+                              thresh=10, output_filename=os.path.join(output_path, name + '_pred-mesh' + ext))
         if target_for_sdf is not None:
             target = target_for_sdf[k, 0]
             colors = None
@@ -703,9 +703,9 @@ def save_predictions(output_path, indices, names, inputs, target_for_sdf, target
                 dense_sem_color = torch.from_numpy(dense_sem_color).byte()
                 mc.marching_cubes(torch.from_numpy(target), dense_sem_color, isovalue=isovalue, truncation=trunc,
                                   thresh=10,
-                                  output_filename=os.path.join(output_path, name + 'target-sem-mesh' + ext))
+                                  output_filename=os.path.join(output_path, name + '_target-sem-mesh' + ext))
             mc.marching_cubes(torch.from_numpy(target), colors, isovalue=isovalue, truncation=trunc, thresh=10,
-                              output_filename=os.path.join(output_path, name + 'target-mesh' + ext))
+                              output_filename=os.path.join(output_path, name + '_target-mesh' + ext))
         if target_color_images is not None and target_color_images[k] is not None:
             Image.fromarray(target_color_images[k]).save(os.path.join(output_path, name + '_target.png'))
         if output_color_images is not None and output_color_images[k] is not None:

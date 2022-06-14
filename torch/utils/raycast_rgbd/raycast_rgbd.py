@@ -59,7 +59,7 @@ class RaycastRGBD(nn.Module):
         self.image_depth = torch.zeros(batch_size * max_num_frames, height, width).cuda()
         self.image_normal = torch.zeros(batch_size * max_num_frames, height, width, 3).cuda()
         self.image_color = torch.zeros(batch_size * max_num_frames, height, width, 3).cuda()
-        self.image_semantic = (41 * torch.ones(batch_size * max_num_frames, height, width, 1)).cuda()
+        self.image_semantic = (torch.zeros(batch_size * max_num_frames, height, width, 41)).cuda()
         self.mapping3dto2d = torch.zeros(batch_size * max_num_frames * max_num_locs_per_sample, max_pixels_per_voxel,
                                          dtype=torch.int).cuda()  # no color trilerp -> only pixel index here
         self.mapping3dto2d_num = torch.zeros(batch_size * max_num_frames * max_num_locs_per_sample,
@@ -75,7 +75,7 @@ class RaycastRGBD(nn.Module):
 
     def forward(self, locs, vals_sdf, vals_colors, vals_normals, vals_semantics, view_matrix, intrinsic_params):
         if vals_semantics is None:
-            vals_semantics = (41 * torch.ones(vals_sdf.shape)).cuda()  # unlabeled class
+            vals_semantics = (torch.zeros(vals_sdf.shape[0], 41)).cuda()  # unlabeled class
         return RayCastRGBDFunction.apply(locs, vals_sdf, vals_colors, vals_normals, vals_semantics, view_matrix,
                                          intrinsic_params, self.dims3d, self.width, self.height, self.depth_min,
                                          self.depth_max, self.thresh_sample_dist, self.ray_increment, self.image_color,

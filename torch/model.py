@@ -417,10 +417,10 @@ class Generator(nn.Module):
         )
         # up for semantic prediction
         self.sem_2 = nn.Sequential(
-            torch.nn.Conv3d(nf_factor * self.nf, 2 * self.n_classes, 3, 1, 1, bias=self.use_bias),
+            torch.nn.Conv3d(nf_factor * self.nf, 3 * self.n_classes, 3, 1, 1, bias=self.use_bias),
             nn.LeakyReLU(0.2, True),
-            nn.BatchNorm3d(2 * self.n_classes),
-            torch.nn.Conv3d(2 * self.n_classes, 2 * self.n_classes, (kz[12], 3, 3), 1, 1, bias=self.use_bias),
+            nn.BatchNorm3d(3 * self.n_classes),
+            torch.nn.Conv3d(3 * self.n_classes, 2 * self.n_classes, (kz[12], 3, 3), 1, 1, bias=self.use_bias),
             nn.LeakyReLU(0.2, True),
             nn.BatchNorm3d(2 * self.n_classes)
         )
