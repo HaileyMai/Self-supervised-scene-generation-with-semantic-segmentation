@@ -142,8 +142,9 @@ def load_sdf(file, load_sparse, load_known, load_color, is_sparse_file=True, col
         return sdf, world2grid, known, color, semantic
     fin.close()
     # TODO refactor
-    if return_voxelsize and load_sparse:
-        return [locs, sdf], [dimz, dimy, dimx], world2grid, known, color, voxelsize
+    if return_voxelsize:
+        sdf = sparse_to_dense_np(locs, sdf[:, np.newaxis], dimx, dimy, dimz, -float('inf'))
+        return sdf, [dimz, dimy, dimx], world2grid, known, color, voxelsize
     elif load_sparse:
         return [locs, sdf], [dimz, dimy, dimx], world2grid, known, color
     else:
@@ -702,8 +703,7 @@ def save_predictions(output_path, indices, names, inputs, target_for_sdf, target
                 dense_sem_color = map_label_to_color(semantics, semantic_color).astype(np.uint8)
                 dense_sem_color = torch.from_numpy(dense_sem_color).byte()
                 mc.marching_cubes(torch.from_numpy(target), dense_sem_color, isovalue=isovalue, truncation=trunc,
-                                  thresh=10,
-                                  output_filename=os.path.join(output_path, name + '_target-sem-mesh' + ext))
+                                  thresh=10, output_filename=os.path.join(output_path, name + '_target-sem-mesh' + ext))
             mc.marching_cubes(torch.from_numpy(target), colors, isovalue=isovalue, truncation=trunc, thresh=10,
                               output_filename=os.path.join(output_path, name + '_target-mesh' + ext))
         if target_color_images is not None and target_color_images[k] is not None:

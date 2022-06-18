@@ -114,12 +114,13 @@ args.input_nf = 4
 UP_AXIS = 0
 _SPLITTER = ','
 # TODO just for debug
-args.max_epoch = 20
-args.batch_size = 1
-args.num_iters_geo_only = 20
-args.save = './logs_overift_no'
-args.weight_semantic_loss = 0
-pred_semantic_3d = True
+args.max_epoch = 10
+args.batch_size = 2
+args.num_iters_geo_only = 60
+args.save = './logs_overfit_2d'
+# args.weight_semantic_loss = 0
+pred_semantic_3d = False
+args.weight_disc_loss = 0
 print(args)
 
 semantic_color = np.load("category_color.npz")['mapping_color']
@@ -182,7 +183,7 @@ if args.weight_disc_loss > 0 and args.retrain_disc:
 # data files
 train_files, val_files, _OVERFIT = data_util.get_train_files(args.data_path, args.train_file_list, args.val_file_list,
                                                              args.max_num_trainval_chunks)
-num_overfit_train = 0 if not _OVERFIT else 640
+num_overfit_train = 0 if not _OVERFIT else 40
 num_overfit_val = 0 if not _OVERFIT else 160
 if _OVERFIT:
     args.use_loss_masking = False
@@ -409,7 +410,8 @@ def train(epoch, iter, dataloader, log_file, output_save):
     train_losssdf = []
     train_lossdepth = []
     train_losscolor = []
-    train_losssemantic = []
+    train_losssemantic_2d = []
+    train_losssemantic_3d = []
     train_lossdisc = []
     train_lossdisc_real = []
     train_lossdisc_fake = []
@@ -732,16 +734,17 @@ def train(epoch, iter, dataloader, log_file, output_save):
                 synth = None
                 target = None
             if pred_semantic:  # semantic loss
-                if pred_semantic_3d:  # 3D
-                    output_sem = output_semantic[target_sem.detach() < 41].clone()
-                    target_sem = target_sem[target_sem.detach() < 41]
-                    loss_semantic = F.cross_entropy(output_sem, target_sem, weight=args.weight_semantic_class)
-                else:  # 2D
+                # 3D
+                output_sem = output_semantic[target_sem.detach() < 41].clone()
+                target_sem = target_sem[target_sem.detach() < 41]
+                loss_semantic = F.cross_entropy(output_sem, target_sem, weight=args.weight_semantic_class)
+                train_losssemantic_3d.append(loss_semantic.item())
+                if not pred_semantic_3d:  # 2D
                     valid = torch.logical_and(target2d_label[..., 0] < 41, raycast_semantic[..., 0] != -float('inf'))
                     loss_semantic = F.cross_entropy(raycast_semantic[valid].view(-1, raycast_semantic.shape[-1]),
                                                     target2d_label[valid].view(-1))
+                    train_losssemantic_2d.append(loss_semantic.item())
                 loss += loss_semantic
-                train_losssemantic.append(loss_semantic.item())
                 cat = torch.cat((raycast_semantic.detach(), torch.ones(raycast_semantic.shape[:-1] + (1,)).cuda()),
                                 dim=-1)
                 _, pred2d_label = torch.max(cat, dim=-1, keepdim=True)
@@ -766,7 +769,7 @@ def train(epoch, iter, dataloader, log_file, output_save):
         if iter % 20 == 0:
             took = time.time() - start
             print_log(log_file, epoch, iter, train_losses, train_lossocc, train_iouocc, train_losssdf, train_lossdepth,
-                      train_losscolor, train_losssemantic, train_lossdisc, train_lossdisc_real, train_lossdisc_fake,
+                      train_losscolor, train_losssemantic_3d, train_lossdisc, train_lossdisc_real, train_lossdisc_fake,
                       train_lossgen, train_lossstyle, train_losscontent, None, None, None, None, None, None, None, None,
                       None, None, None, None, None, took)
         if iter % 10000 == 0:
@@ -839,7 +842,7 @@ def train(epoch, iter, dataloader, log_file, output_save):
                                        input_images=vis_input_images_color, pred_depth=vis_pred_depth,
                                        target_depth=vis_target_depth, pred_occ=pred_occ)
 
-    return train_losses, train_lossocc, train_iouocc, train_losssdf, train_lossdepth, train_losscolor, train_losssemantic, train_lossdisc, train_lossdisc_real, train_lossdisc_fake, train_lossgen, train_lossstyle, train_losscontent, iter
+    return train_losses, train_lossocc, train_iouocc, train_losssdf, train_lossdepth, train_losscolor, train_losssemantic_3d, train_lossdisc, train_lossdisc_real, train_lossdisc_fake, train_lossgen, train_lossstyle, train_losscontent, iter
 
 
 def test(epoch, iter, dataloader, log_file, output_save):
@@ -849,7 +852,8 @@ def test(epoch, iter, dataloader, log_file, output_save):
     val_losssdf = []
     val_lossdepth = []
     val_losscolor = []
-    val_losssemantic = []
+    val_losssemantic_2d = []
+    val_losssemantic_3d = []
     val_lossdisc = []
     val_lossdisc_real = []
     val_lossdisc_fake = []
@@ -1158,17 +1162,19 @@ def test(epoch, iter, dataloader, log_file, output_save):
                     synth = None
                     target = None
                 if pred_semantic:  # semantic loss
-                    if pred_semantic_3d:  # 3D
-                        output_sem = output_semantic[target_sem.detach() < 41].clone()
-                        target_sem = target_sem[target_sem.detach() < 41]
-                        loss_semantic = F.cross_entropy(output_sem, target_sem, weight=args.weight_semantic_class)
-                    else:  # 2D
+                    # 3D
+                    output_sem = output_semantic[target_sem.detach() < 41].clone()
+                    target_sem = target_sem[target_sem.detach() < 41]
+                    loss_semantic = F.cross_entropy(output_sem, target_sem, weight=args.weight_semantic_class)
+                    val_losssemantic_3d.append(loss_semantic.item())
+                    if not pred_semantic_3d:  # 2D
                         valid = torch.logical_and(target2d_label[..., 0] < 41,
                                                   raycast_semantic[..., 0] != -float('inf'))
                         loss_semantic = F.cross_entropy(raycast_semantic[valid].view(-1, raycast_semantic.shape[-1]),
                                                         target2d_label[valid].view(-1))
+                        val_losssemantic_2d.append(loss_semantic.item())
                     loss += loss_semantic
-                    val_losssemantic.append(loss_semantic.item())
+
                     cat = torch.cat((raycast_semantic.detach(), torch.ones(raycast_semantic.shape[:-1] + (1,)).cuda()),
                                     dim=-1)
                     _, pred2d_label = torch.max(cat, dim=-1, keepdim=True)
@@ -1245,7 +1251,7 @@ def test(epoch, iter, dataloader, log_file, output_save):
                                            target_depth=vis_target_depth,
                                            pred_occ=pred_occ)
 
-    return val_losses, val_lossocc, val_iouocc, val_losssdf, val_lossdepth, val_losscolor, val_losssemantic, val_lossdisc, val_lossdisc_real, val_lossdisc_fake, val_lossgen, val_lossstyle, val_losscontent
+    return val_losses, val_lossocc, val_iouocc, val_losssdf, val_lossdepth, val_losscolor, val_losssemantic_3d, val_lossdisc, val_lossdisc_real, val_lossdisc_fake, val_lossgen, val_lossstyle, val_losscontent
 
 
 def main():

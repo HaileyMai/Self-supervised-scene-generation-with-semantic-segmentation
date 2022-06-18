@@ -6,6 +6,7 @@ from os import path, listdir
 import json
 import random
 import data_util
+import loss
 import torch
 import numpy as np
 from matplotlib.patches import Rectangle
@@ -48,18 +49,21 @@ parser.add_argument("--samples_per_face", type=int, default=10, help="how many p
 args = parser.parse_args()
 print(args)
 
-mapping_table = pd.read_csv(args.mapping, sep="\t")
-category = pd.read_csv(args.category_list, sep="\t")
-assert args.category_taxonomy in mapping_table.columns and args.raw_category in mapping_table.columns
+mapping_table = pd.read_csv(args.mapping, sep="\t")[["raw_category", "mpcat40index"]]
+mpcat40_table = pd.read_csv(args.category_list, sep="\t")[["mpcat40", "mpcat40index"]]
+# assert args.category_taxonomy in mapping_table.columns and args.raw_category in mapping_table.columns
 # mapping is a dict from string to id
-mapping = dict(zip(mapping_table[args.raw_category], mapping_table[args.category_taxonomy]))
+# mapping = dict(zip(mapping_table[args.raw_category], mapping_table[args.category_taxonomy]))
+mpcat40index = np.array(mapping_table["mpcat40index"].values)
+mpcat40index = np.concatenate((np.array([0]), mpcat40index), axis=-1)
+
 np.random.seed(6)
-mapping_label = category[args.category_name].values
+mapping_label = mpcat40_table["mpcat40"].values
 mapping_color = np.zeros((42, 3))
 for i in range(42):
     mapping_color[i] = np.random.choice(range(256), size=3)
-mapping_color[-1] = np.array([0, 0, 0])
-mapping_color[0] = np.array([255, 255, 255])
+mapping_color[-1] = np.array([0, 0, 0])  # unlabled: black
+mapping_color[0] = np.array([255, 255, 255])  # void: white
 
 
 def plot_colortable(colors, title, emptycols=0):
@@ -115,6 +119,33 @@ category_img = plot_colortable(color_list[:], "Category List")
 category_img.savefig("Category_list.png")
 np.savez("category_color", mapping_color=mapping_color.astype(np.uint8))
 
+
+def sample_point_cloud(vertices_, faces_, cat_ids, n_points_per_face, add_centers=False, uniform=False):
+    triangle_vertices = np.dstack([vertices_[faces_[:, 0]], vertices_[faces_[:, 1]], vertices_[faces_[:, 2]]])
+    n_points = n_points_per_face * faces_.shape[0]
+    if uniform:
+        triangle_areas = 0.5 * np.linalg.norm(np.cross(triangle_vertices[:, 1, :] - triangle_vertices[:, 0, :],
+                                                       triangle_vertices[:, 2, :] - triangle_vertices[:, 0, :]), axis=1)
+        triangle_probabilities = triangle_areas / triangle_areas.sum()
+        chosen_triangles = np.random.choice(range(triangle_areas.shape[0]), n_points, p=triangle_probabilities)
+    else:
+        chosen_triangles = np.repeat(np.arange(faces_.shape[0]), n_points_per_face)
+    chosen_vertices = triangle_vertices[chosen_triangles, :, :]
+    category = cat_ids[chosen_triangles]
+
+    r1 = np.random.rand(n_points, 1)
+    r2 = np.random.rand(n_points, 1)
+    u = 1 - np.sqrt(r1)
+    v = np.sqrt(r1) * (1 - r2)
+    w = np.sqrt(r1) * r2
+    result_xyz = u * chosen_vertices[:, :, 0] + v * chosen_vertices[:, :, 1] + w * chosen_vertices[:, :, 2]
+    if add_centers:
+        centers = (vertices_[faces_[:, 0]] + vertices_[faces_[:, 1]] + vertices_[faces_[:, 2]]) / 3
+        result_xyz = np.concatenate((result_xyz, centers))
+        category = np.concatenate((category, cat_ids))
+    return result_xyz, category
+
+
 seg_dir = path.join(args.seg_path, "v1", "scans")
 
 for segmentation in listdir(seg_dir):
@@ -149,83 +180,101 @@ for segmentation in listdir(seg_dir):
         vertices = data.elements[0]
         faces = data.elements[1]
 
-        point_sems = []
-        for i in range(faces.count):
-            face_vertices, _, object_id, category_id = faces.data[i]
-            face_vertices = [vertices[i] for i in face_vertices]
+        vertices_pos = np.stack([np.stack(vertices['x']), np.stack(vertices['y']), np.stack(vertices['z'])], axis=1)
+        face_vertices = np.stack(faces.data['vertex_indices'])
+        category_ids = np.stack(faces.data['category_id'])
+        sampled_points, sampled_cat = sample_point_cloud(vertices_pos, face_vertices, category_ids,
+                                                         args.samples_per_face, add_centers=True)
+        sampled_points2, sampled_cat2 = sample_point_cloud(vertices_pos, face_vertices, category_ids,
+                                                           args.samples_per_face, add_centers=False, uniform=True)
+        sampled_points = np.concatenate((sampled_points, sampled_points2))
+        sampled_cat = np.concatenate((sampled_cat, sampled_cat2))
 
-            # calculate center of face
-            z = (face_vertices[0]["z"] + face_vertices[1]["z"] + face_vertices[2]["z"]) / 3
-            y = (face_vertices[0]["y"] + face_vertices[1]["y"] + face_vertices[2]["y"]) / 3
-            x = (face_vertices[0]["x"] + face_vertices[1]["x"] + face_vertices[2]["x"]) / 3
+        # point_sems = []
+        # for i in range(faces.count):
+        #     face_vertices, _, object_id, category_id = faces.data[i]
+        #     face_vertices = [vertices[i] for i in face_vertices]
+        #
+        #     # calculate center of face
+        #     z = (face_vertices[0]["z"] + face_vertices[1]["z"] + face_vertices[2]["z"]) / 3
+        #     y = (face_vertices[0]["y"] + face_vertices[1]["y"] + face_vertices[2]["y"]) / 3
+        #     x = (face_vertices[0]["x"] + face_vertices[1]["x"] + face_vertices[2]["x"]) / 3
+        #
+        #     raw_category = semseg[object_id]["label"]
+        #     if raw_category in mapping:
+        #         sem = mapping[raw_category]
+        #         if sem != category_id:
+        #             print(sem, category_id)
+        #     else:
+        #         sem = 41  # unlabeled as default
+        #
+        #     # add center
+        #     center_sem = [x, y, z, sem]
+        #     point_sems += [center_sem]
+        #
+        #     # add corners
+        #     corners = []
+        #     for i in range(3):
+        #         point_sem = [face_vertices[i]["x"], face_vertices[i]["y"], face_vertices[i]["z"], sem]
+        #         corners += [point_sem]
+        #
+        #     point_sems += corners
+        #
+        #     # TODO random sampling for now, calculate how many are needed instead
+        #     # for factors in np.random.dirichlet(np.ones(3), size=args.samples_per_face):
+        #     #     z = corners[0][2] * factors[0] + corners[1][2] * factors[1] + corners[2][2] * factors[2]
+        #     #     y = corners[0][1] * factors[0] + corners[1][1] * factors[1] + corners[2][1] * factors[2]
+        #     #     x = corners[0][0] * factors[0] + corners[1][0] * factors[1] + corners[2][0] * factors[2]
+        #     #
+        #     #     point_sem = [x, y, z, sem]
+        #     #     point_sems += [point_sem]
 
-            raw_category = semseg[object_id]["label"]
-            if raw_category in mapping:
-                sem = mapping[raw_category]
-            else:
-                sem = 41  # unlabeled as default
-
-            # add center
-            center_sem = [x, y, z, sem]
-            point_sems += [center_sem]
-
-            # add corners 
-            corners = []
-            for i in range(3):
-                point_sem = [face_vertices[i]["x"], face_vertices[i]["y"], face_vertices[i]["z"], sem]
-                corners += [point_sem]
-
-            point_sems += corners
-
-            # TODO random sampling for now, calculate how many are needed instead
-            for factors in np.random.dirichlet(np.ones(3), size=args.samples_per_face):
-                z = corners[0][2] * factors[0] + corners[1][2] * factors[1] + corners[2][2] * factors[2]
-                y = corners[0][1] * factors[0] + corners[1][1] * factors[1] + corners[2][1] * factors[2]
-                x = corners[0][0] * factors[0] + corners[1][0] * factors[1] + corners[2][0] * factors[2]
-
-                point_sem = [x, y, z, sem]
-                point_sems += [point_sem]
-
-        point_sems = np.array(point_sems)
+        # point_sems = np.array(point_sems)
 
         while path.exists(sdf_base + str(sdf_number) + ".sdf"):
             # print(f"--sdf {sdf_number}")
             sdf_path = sdf_base + str(sdf_number) + ".sdf"
-            [locs, sdf], [dimz, dimy, dimx], world2grid, known, colors, voxelsize = data_util.load_sdf(
-                sdf_path, True, False, True, return_voxelsize=True)
+            sdf, [dimz, dimy, dimx], world2grid, known, colors, voxelsize = data_util.load_sdf(
+                sdf_path, False, True, True, return_voxelsize=True)
 
-            points = point_sems.copy()
+            # points = point_sems.copy()
+            points = sampled_points.copy()
 
             x = np.ones((points.shape[0], 4))
             x[:, :3] = points[:, :3]
             x = np.matmul(world2grid, np.transpose(x))
-            x = np.transpose(x) / voxelsize
-            x = np.divide(x[:, :3], x[:, 3, None])
+            x = np.transpose(x)[:, :3]
             x = np.rint(x)
 
             lower_bound = np.all(x >= 0, axis=1)
             upper_bound = np.all(x < [dimx, dimy, dimz], axis=1)
             inbounds = np.logical_and(lower_bound, upper_bound)
-            points = np.column_stack((x, points[:, 3]))
+            points = np.column_stack((x, mpcat40index[sampled_cat]))
             points = points[inbounds]  # keep only values that are in the given grid
 
-            _, unique = np.unique(points[:, :3], axis=0,
-                                  return_index=True)  # TODO how to choose a label for a grid coordinate
-            points = points[unique]
-
-            points = points.astype(int)
+            _, unique = np.unique(points[:, :3], axis=0, return_index=True)
+            points = points[unique].astype(int)
 
             # convert to dense to keep format the same as colors, default unlabeled
             dense_sem = 41 * np.ones([dimz, dimy, dimx], dtype=np.uint8)
-            dense_sem[points[:, 2], points[:, 1], points[:, 0]] = points[:, 3]  # TODO store in xyz or zyx order?
+            dense_sem[points[:, 2], points[:, 1], points[:, 0]] = points[:, 3]
 
-            # print([dimz, dimy, dimx])
-            # print(points)
-            # print(np.bincount(points[:, 3]))
-            # print(points.shape)
-            # print(locs.shape)
-            # print(points.shape[0] / locs.shape[0])  # TODO assign semantics for each loc
-
+            # visualization for debug
+            target_for_sdf, target_for_colors = loss.compute_targets(sdf[None, None, ...], args.truncation,
+                                                                     True, known[None, None, ...], colors[None, ...])
+            dense_sem_color = np.zeros([dimz, dimy, dimx, 3], dtype=np.uint8)
+            dense_sem_color[points[:, 2], points[:, 1], points[:, 0]] = mapping_color[points[:, 3]]
+            dense_sem_color = dense_sem_color.astype(np.uint8)
+            dense_sem_color = torch.from_numpy(dense_sem_color).byte()
+            mc.marching_cubes(torch.from_numpy(target_for_sdf[0, 0]), dense_sem_color, isovalue=0, truncation=2.9,
+                              thresh=10,
+                              output_filename=os.path.join(args.output_dir + 'mesh', segmentation + "_room" +
+                                                           str(region) + "__sem__" + str(sdf_number) + '.ply'))
+            target_for_colors = torch.from_numpy(target_for_colors).byte()
+            mc.marching_cubes(torch.from_numpy(target_for_sdf[0, 0]), target_for_colors[0], isovalue=0, truncation=2.9,
+                              thresh=10,
+                              output_filename=os.path.join(args.output_dir + 'mesh', segmentation + "_room" +
+                                                           str(region) + "__color__" + str(sdf_number) + '.ply'))
             out_path = path.join(args.output_dir,
                                  segmentation + "_room" + str(region) + "__sem__" + str(sdf_number) + ".sdf")
 
@@ -233,18 +282,6 @@ for segmentation in listdir(seg_dir):
                 with open(out_path, "wb") as o:
                     o.write(i.read())  # copy everything
                     o.write(dense_sem.tobytes())
-
-            # visualization for debug
-            # dense_sem_color = np.zeros([dimz, dimy, dimx, 3], dtype=np.uint8)
-            # dense_sem_color[points[:, 2], points[:, 1], points[:, 0]] = mapping_color[points[:, 3]]
-            # dense_sem_color = torch.from_numpy(dense_sem_color).byte()
-            # mc.marching_cubes(torch.from_numpy(sdf), dense_sem_color, isovalue=0, truncation=10, thresh=10,
-            #                   output_filename=os.path.join(args.output_dir + 'mesh', segmentation + "_room" +
-            #                                                str(region) + "__sem__" + str(sdf_number) + '.ply'))
-            # colors = torch.from_numpy(colors).byte()
-            # mc.marching_cubes(torch.from_numpy(sdf), colors, isovalue=0, truncation=10, thresh=10,
-            #                   output_filename=os.path.join(args.output_dir + 'mesh', segmentation + "_room" +
-            #                                                str(region) + "__color__" + str(sdf_number) + '.ply'))
 
             sdf_number += 1
 
