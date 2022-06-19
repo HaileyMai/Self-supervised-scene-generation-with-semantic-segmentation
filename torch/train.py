@@ -116,10 +116,10 @@ _SPLITTER = ','
 # TODO just for debug
 args.max_epoch = 10
 args.batch_size = 2
-args.num_iters_geo_only = 60
-args.save = './logs_overfit_2d'
-# args.weight_semantic_loss = 0
-pred_semantic_3d = False
+args.num_iters_geo_only = 120
+args.save = './logs_no'
+args.weight_semantic_loss = 0
+pred_semantic_3d = True
 args.weight_disc_loss = 0
 print(args)
 

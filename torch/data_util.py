@@ -60,8 +60,7 @@ def dense_to_sparse_np(grid, thresh):
     return locs, values
 
 
-def load_sdf(file, load_sparse, load_known, load_color, is_sparse_file=True, color_file=None, load_semantic=False,
-             return_voxelsize=False):
+def load_sdf(file, load_sparse, load_known, load_color, is_sparse_file=True, color_file=None, load_semantic=False):
     # assert os.path.isfile(file)
     assert (not load_sparse and not load_known) or (load_sparse != load_known)
     assert (not load_sparse and not load_semantic) or (load_sparse != load_semantic)
@@ -130,26 +129,21 @@ def load_sdf(file, load_sparse, load_known, load_color, is_sparse_file=True, col
             color = struct.unpack('B' * num_color * 3, fin.read(num_color * 3))
             color = np.asarray(color, dtype=np.uint8).reshape([dimz, dimy, dimx, 3])
 
-    semantic = None
-
     # TODO hack for now, always loads dense, needs refactoring
     if load_semantic:
-        num_semantics = dimx * dimy * dimz
-        semantic = struct.unpack('B' * num_semantics, fin.read(num_semantics))
+        num_semantic = struct.unpack('Q', fin.read(8))[0]
+        assert num_semantic == dimx * dimy * dimz
+        semantic = struct.unpack('B' * num_semantic, fin.read(num_semantic))
         semantic = np.asarray(semantic, dtype=np.uint8).reshape([dimz, dimy, dimx])
         fin.close()
         sdf = sparse_to_dense_np(locs, sdf[:, np.newaxis], dimx, dimy, dimz, -float('inf'))
         return sdf, world2grid, known, color, semantic
     fin.close()
-    # TODO refactor
-    if return_voxelsize:
-        sdf = sparse_to_dense_np(locs, sdf[:, np.newaxis], dimx, dimy, dimz, -float('inf'))
-        return sdf, [dimz, dimy, dimx], world2grid, known, color, voxelsize
-    elif load_sparse:
+    if load_sparse:
         return [locs, sdf], [dimz, dimy, dimx], world2grid, known, color
     else:
         sdf = sparse_to_dense_np(locs, sdf[:, np.newaxis], dimx, dimy, dimz, -float('inf'))
-        return sdf, world2grid, known, color, semantic
+        return sdf, world2grid, known, color
 
 
 # pad: padding at known scale
