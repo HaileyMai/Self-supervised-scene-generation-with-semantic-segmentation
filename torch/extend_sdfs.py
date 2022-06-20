@@ -9,8 +9,8 @@ from os import path, listdir
 import json
 import random
 import data_util
-import loss
 import torch
+import loss
 import numpy as np
 from matplotlib.patches import Rectangle
 import matplotlib.pyplot as plt
@@ -18,6 +18,7 @@ import pandas as pd
 import argparse
 import zipfile
 import utils.marching_cubes.marching_cubes as mc
+import sample_util
 
 """
 First run download-mp.py -o [output_dir] --type region_segmentations
@@ -120,46 +121,6 @@ category_img = plot_colortable(color_list[:], "Category List")
 category_img.savefig("Category_list.png")
 np.savez("category_color", mapping_color=mapping_color.astype(np.uint8))
 
-
-def sample_point_cloud(vertices_, faces_, cat_ids, n_points_per_face, add_centers=False, uniform=False):
-    triangle_vertices = np.dstack([vertices_[faces_[:, 0]], vertices_[faces_[:, 1]], vertices_[faces_[:, 2]]])
-    n_points = n_points_per_face * faces_.shape[0]
-    if uniform:
-        triangle_areas = 0.5 * np.linalg.norm(np.cross(triangle_vertices[:, 1, :] - triangle_vertices[:, 0, :],
-                                                       triangle_vertices[:, 2, :] - triangle_vertices[:, 0, :]), axis=1)
-        triangle_probabilities = triangle_areas / triangle_areas.sum()
-        chosen_triangles = np.random.choice(range(triangle_areas.shape[0]), n_points, p=triangle_probabilities)
-    else:
-        chosen_triangles = np.repeat(np.arange(faces_.shape[0]), n_points_per_face)
-    chosen_vertices = triangle_vertices[chosen_triangles, :, :]
-    category = cat_ids[chosen_triangles]
-
-    r1 = np.random.rand(n_points, 1)
-    r2 = np.random.rand(n_points, 1)
-    u = 1 - np.sqrt(r1)
-    v = np.sqrt(r1) * (1 - r2)
-    w = np.sqrt(r1) * r2
-    result_xyz = u * chosen_vertices[:, :, 0] + v * chosen_vertices[:, :, 1] + w * chosen_vertices[:, :, 2]
-    if add_centers:
-        centers = (vertices_[faces_[:, 0]] + vertices_[faces_[:, 1]] + vertices_[faces_[:, 2]]) / 3
-        result_xyz = np.concatenate((result_xyz, centers))
-        category = np.concatenate((category, cat_ids))
-    return result_xyz, category
-
-
-def sample_from_region_ply(ply_path_, num):
-    data = PlyData.read(ply_path_)
-    vertices = data.elements[0]
-    faces = data.elements[1]
-
-    vertices_pos = np.stack([np.stack(vertices['x']), np.stack(vertices['y']), np.stack(vertices['z'])], axis=1)
-    face_vertices = np.stack(faces.data['vertex_indices'])
-    category_ids = np.stack(faces.data['category_id'])
-    sampled_point_clouds, sampled_category = sample_point_cloud(vertices_pos, face_vertices, category_ids, num,
-                                                                add_centers=True, uniform=True)
-    return sampled_point_clouds, sampled_category
-
-
 def add_semantics_to_chunk_sdf(sdf_file_name, points, cat, vis_path=None):
     sdf, world2grid, known, colors = data_util.load_sdf(
         sdf_file_name, load_sparse=False, load_known=True, load_color=True)
@@ -211,7 +172,6 @@ def add_semantics_to_chunk_sdf(sdf_file_name, points, cat, vis_path=None):
         #                   thresh=10, output_filename=os.path.join(vis_path, sp1 + '__color__' + sp3 + '.ply'))
     return dense_semantics
 
-
 seg_dir = path.join(args.seg_path, "v1", "scans")
 
 for segmentation in listdir(seg_dir):
@@ -239,7 +199,7 @@ for segmentation in listdir(seg_dir):
         print(f"-region {region}")
 
         ply_path = path.join(ply_dir, "region" + str(region) + ".ply")
-        sampled_points, sampled_cat = sample_from_region_ply(ply_path, num=args.samples_per_face)
+        sampled_points, sampled_cat = sample_util.sample_from_region_ply(ply_path, num=args.samples_per_face)
         if region_sampled_points is None:
             region_sampled_points = sampled_points
             region_sampled_cat = sampled_cat
