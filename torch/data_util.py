@@ -129,6 +129,7 @@ def load_sdf(file, load_sparse, load_known, load_color, is_sparse_file=True, col
             color = struct.unpack('B' * num_color * 3, fin.read(num_color * 3))
             color = np.asarray(color, dtype=np.uint8).reshape([dimz, dimy, dimx, 3])
 
+    semantic = None
     if load_semantic:
         num_semantic = struct.unpack('Q', fin.read(8))[0]
         assert num_semantic == dimx * dimy * dimz
@@ -139,10 +140,10 @@ def load_sdf(file, load_sparse, load_known, load_color, is_sparse_file=True, col
         return sdf, world2grid, known, color, semantic
     fin.close()
     if load_sparse:
-        return [locs, sdf], [dimz, dimy, dimx], world2grid, known, color
+        return [locs, sdf], [dimz, dimy, dimx], world2grid, known, color, semantic
     else:
         sdf = sparse_to_dense_np(locs, sdf[:, np.newaxis], dimx, dimy, dimz, -float('inf'))
-        return sdf, world2grid, known, color
+        return sdf, world2grid, known, color, semantic
 
 
 # pad: padding at known scale
@@ -577,9 +578,9 @@ def save_predictions(output_path, indices, names, inputs, target_for_sdf, target
                      aux_images=None):
     if not os.path.isdir(output_path):
         os.makedirs(output_path)
-    if target_for_sdf is not None:
-        dims = target_for_sdf.shape[2:]
-    elif inputs is not None:
+    # if target_for_sdf is not None:
+    #     dims = target_for_sdf.shape[2:]
+    if inputs is not None:
         dims = inputs.shape[2:]
     isovalue = 0
     trunc = truncation - 0.1

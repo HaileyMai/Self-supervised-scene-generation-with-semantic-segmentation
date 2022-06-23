@@ -26,6 +26,7 @@ First run download-mp.py -o [output_dir] --type region_segmentations
 Category mapping should be taken from https://github.com/niessner/Matterport/blob/master/metadata/category_mapping.tsv
 """
 
+
 def plot_colortable(colors, title, emptycols=0):
     cell_width = 212
     cell_height = 22
@@ -72,8 +73,9 @@ def plot_colortable(colors, title, emptycols=0):
 
     return fig
 
+
 def add_semantics_to_chunk_sdf(sdf_file_name, points, cat, mpcat40index, vis_path=None):
-    sdf, world2grid, known, colors = data_util.load_sdf(
+    sdf, world2grid, known, colors, _ = data_util.load_sdf(
         sdf_file_name, load_sparse=False, load_known=True, load_color=True)
     dimz, dimy, dimx = sdf.shape[0], sdf.shape[1], sdf.shape[2]
 
@@ -123,12 +125,14 @@ def add_semantics_to_chunk_sdf(sdf_file_name, points, cat, mpcat40index, vis_pat
         #                   thresh=10, output_filename=os.path.join(vis_path, sp1 + '__color__' + sp3 + '.ply'))
     return dense_semantics
 
-def extend_sdf_file(segmentation, sdf_file, output_dir, output_vis_dir, region_sampled_points, region_sampled_cat, mpcat40index):
-    #print(f"Now extending {sdf_file}.")
+
+def extend_sdf_file(segmentation, sdf_file, output_dir, output_vis_dir, region_sampled_points, region_sampled_cat,
+                    mpcat40index):
+    # print(f"Now extending {sdf_file}.")
     room, _, sdf_number = os.path.splitext(os.path.basename(sdf_file))[0].split('__')
     region = room.split('room')[-1]
 
-    sdf, world2grid, _, _ = data_util.load_sdf(sdf_file, load_sparse=False, load_known=False, load_color=False)
+    sdf, world2grid, _, _, _ = data_util.load_sdf(sdf_file, load_sparse=False, load_known=False, load_color=False)
     limits = np.concatenate((np.array([[0, 0, 0, 1]]), np.array([[sdf.shape[2], sdf.shape[1], sdf.shape[0], 1]])))
     grid2world = np.linalg.inv(world2grid)  # transformation already considered voxel size
 
@@ -136,7 +140,8 @@ def extend_sdf_file(segmentation, sdf_file, output_dir, output_vis_dir, region_s
     limits = np.transpose(limits)[:, :3]
     valid = np.logical_and(region_sampled_points >= limits[0] - 0.3, region_sampled_points <= limits[1] + 0.3)
     valid = np.all(valid, axis=1)
-    dense_sem = add_semantics_to_chunk_sdf(sdf_file, region_sampled_points[valid], region_sampled_cat[valid], mpcat40index, vis_path=output_vis_dir)
+    dense_sem = add_semantics_to_chunk_sdf(sdf_file, region_sampled_points[valid], region_sampled_cat[valid],
+                                           mpcat40index, vis_path=output_vis_dir)
 
     out_path = path.join(output_dir, segmentation + "_room" + str(region) + "__sem__" + str(sdf_number) + ".sdf")
     with open(sdf_file, "rb") as i:
@@ -149,10 +154,12 @@ def extend_sdf_file(segmentation, sdf_file, output_dir, output_vis_dir, region_s
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
 
-    parser.add_argument("--seg_path", type=str, required=True, help="output directory of the region segmentation download")
+    parser.add_argument("--seg_path", type=str, required=True,
+                        help="output directory of the region segmentation download")
     parser.add_argument("--mapping", type=str, required=True,
                         help="table that contains the mapping of raw_categories to ids")
-    parser.add_argument("--category_list", type=str, required=True, help="table contains the mapping from index to name")
+    parser.add_argument("--category_list", type=str, required=True,
+                        help="table contains the mapping from index to name")
     parser.add_argument("--category_name", type=str, default="mpcat40")
     parser.add_argument("--category_taxonomy", type=str, default="mpcat40index",
                         help="what taxonomy to use, should be a column of the mapping table")
@@ -162,9 +169,9 @@ if __name__ == "__main__":
     parser.add_argument("--output_dir", type=str, default=".", help="where to write the extended .sdf files")
     parser.add_argument("--output_vis_dir", type=str, default=".", help="where to write the extended .sdf files")
     parser.add_argument("--truncation", type=float, default=3, help="truncation in voxels")
-    parser.add_argument("--samples_per_face", type=int, default=8, help="how many points are sampled from every face in average")
+    parser.add_argument("--samples_per_face", type=int, default=8,
+                        help="how many points are sampled from every face in average")
     parser.add_argument("--max_scenes", type=int, default=None, help="set maximum number of scenes processed")
-
 
     args = parser.parse_args()
     print(args)
@@ -236,8 +243,10 @@ if __name__ == "__main__":
         # add valid points to corresponding sdf file(s)
         paths = glob.glob(args.sdf_path + str(segmentation) + '*cmp*')
         start = time.time()
-        with ThreadPoolExecutor(max_workers = 4) as executor:
-            future_dict = {executor.submit(extend_sdf_file, segmentation, sdf_file, args.output_dir, args.output_vis_dir, region_sampled_points, region_sampled_cat, mpcat40index): sdf_file for sdf_file in paths}
+        with ThreadPoolExecutor(max_workers=4) as executor:
+            future_dict = {
+                executor.submit(extend_sdf_file, segmentation, sdf_file, args.output_dir, args.output_vis_dir,
+                                region_sampled_points, region_sampled_cat, mpcat40index): sdf_file for sdf_file in paths}
 
             for future in as_completed(future_dict):
                 sdf = future_dict[future]

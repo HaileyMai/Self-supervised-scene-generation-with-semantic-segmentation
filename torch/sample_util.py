@@ -1,7 +1,9 @@
 from plyfile import PlyData
 import numpy as np
 
-def sample_point_cloud(vertices_, faces_, cat_ids, n_points_per_face, add_centers=False, uniform=False, force_total_n=False, with_semantics=True):
+
+def sample_point_cloud(vertices_, faces_, cat_ids, n_points_per_face, add_centers=False, uniform=False,
+                       force_total_n=False, with_semantics=True):
     triangle_vertices = np.dstack([vertices_[faces_[:, 0]], vertices_[faces_[:, 1]], vertices_[faces_[:, 2]]])
 
     if force_total_n:
@@ -31,10 +33,9 @@ def sample_point_cloud(vertices_, faces_, cat_ids, n_points_per_face, add_center
     if add_centers:
         centers = (vertices_[faces_[:, 0]] + vertices_[faces_[:, 1]] + vertices_[faces_[:, 2]]) / 3
         result_xyz = np.concatenate((result_xyz, centers))
-        
         if with_semantics:
             category = np.concatenate((category, cat_ids))
-    
+
     if with_semantics:
         return result_xyz, category
     else:
@@ -48,12 +49,11 @@ def sample_from_region_ply(ply_path_, num, force_total_n=False, with_semantics=T
 
     vertices_pos = np.stack([np.stack(vertices['x']), np.stack(vertices['y']), np.stack(vertices['z'])], axis=1)
     face_vertices = np.stack(faces.data['vertex_indices'])
-    
+
     if with_semantics:
         category_ids = np.stack(faces.data['category_id'])
     else:
         category_ids = None
 
-    return sample_point_cloud(vertices_pos, face_vertices, category_ids, num,
-                                                                add_centers=True, uniform=True, force_total_n=force_total_n, with_semantics=with_semantics)
-
+    return sample_point_cloud(vertices_pos, face_vertices, category_ids, num, add_centers=True, uniform=True,
+                              force_total_n=force_total_n, with_semantics=with_semantics)

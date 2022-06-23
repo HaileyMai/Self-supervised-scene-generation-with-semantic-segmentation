@@ -103,8 +103,7 @@ parser.add_argument('--no_filter_proj_tgt', dest='filter_proj_tgt', action='stor
 parser.add_argument('--weight_by_percent_pixels', dest='weight_by_percent_pixels', action='store_true')
 
 parser.set_defaults(logweight_sdf=True, use_loss_masking=True, augment_rgb_scaling=True, pass_geo_feats=True,
-                    pass_color_feats=True, project_targets=True, patch_disc=True, filter_proj_tgt=True,
-                    weight_by_percent_pixels=False)
+                    project_targets=True, patch_disc=True, filter_proj_tgt=True, weight_by_percent_pixels=False)
 args = parser.parse_args()
 assert (args.disc_loss_type in GAN_TYPES)
 assert (args.color_space in COLOR_SPACES)
@@ -116,9 +115,9 @@ _SPLITTER = ','
 # TODO just for debug
 args.max_epoch = 10
 args.batch_size = 2
-args.num_iters_geo_only = 120
-args.save = './logs_no'
-args.weight_semantic_loss = 0
+args.num_iters_geo_only = 1000
+args.save = './logs_2d'
+args.weight_semantic_loss = 0.1
 pred_semantic_3d = True
 args.weight_disc_loss = 0
 print(args)
@@ -1248,8 +1247,7 @@ def test(epoch, iter, dataloader, log_file, output_save):
                                            vis_pred_color, vis_pred_semantic, None, vis_pred_images_color,
                                            vis_pred_images_semantic, sample['world2grid'].numpy(), args.truncation,
                                            semantic_color, args.color_space, pred_depth=vis_pred_depth,
-                                           target_depth=vis_target_depth,
-                                           pred_occ=pred_occ)
+                                           target_depth=vis_target_depth, pred_occ=pred_occ)
 
     return val_losses, val_lossocc, val_iouocc, val_losssdf, val_lossdepth, val_losscolor, val_losssemantic_3d, val_lossdisc, val_lossdisc_real, val_lossdisc_fake, val_lossgen, val_lossstyle, val_losscontent
 
