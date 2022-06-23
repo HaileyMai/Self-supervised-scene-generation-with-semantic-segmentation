@@ -163,6 +163,8 @@ if __name__ == "__main__":
     parser.add_argument("--output_vis_dir", type=str, default=".", help="where to write the extended .sdf files")
     parser.add_argument("--truncation", type=float, default=3, help="truncation in voxels")
     parser.add_argument("--samples_per_face", type=int, default=8, help="how many points are sampled from every face in average")
+    parser.add_argument("--max_scenes", type=int, default=None, help="set maximum number of scenes processed")
+
 
     args = parser.parse_args()
     print(args)
@@ -188,7 +190,12 @@ if __name__ == "__main__":
 
     seg_dir = path.join(args.seg_path, "v1", "scans")
 
+    num_scenes = 0
     for segmentation in listdir(seg_dir):
+        if args.max_scenes is not None and args.max_scenes <= num_scenes:
+            print("Max number of scenes reached, done.")
+            exit()
+
         unzip_path = path.join(seg_dir, segmentation)
         print("=========================")
         if path.exists(path.join(unzip_path, segmentation)):
@@ -241,5 +248,6 @@ if __name__ == "__main__":
 
         took = time.time() - start
         print(f"Processed {len(paths)} sdf files, took {took} s.")
+        num_scenes += 1
 
     print("Done.")
