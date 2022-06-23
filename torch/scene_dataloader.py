@@ -112,15 +112,15 @@ class SceneDataset(torch.utils.data.Dataset):
             return {'name': None}
         if self.load_known and not self.is_chunks:
             file_info = os.path.split(sdf_file)
-            prefix = file_info[0] + '-complete' if 'color' in file_info[0] else file_info[0] + '_scanned'
+            prefix = file_info[0] + '-complete' if 'color' in file_info[0] else file_info[0]  # + '_scanned'
             pad_known = (3, 6, 6) if 'color' in file_info[0] else (3, 3, 3)
             known_file = os.path.join(prefix, os.path.splitext(file_info[1])[0] + '.knw')
             known_file = known_file.replace('_trunc32-complete', '-complete')
             known = data_util.load_known(known_file, pad_known=pad_known, scale_to_dims=sdf.shape)
         input_color_file = None if self.is_chunks else os.path.splitext(inputsdf_file)[0] + '.colors'
         # load incomplete sdf as input, load_sparse = True
-        input, _, _, _, input_colors = data_util.load_sdf(inputsdf_file, load_sparse=True, load_known=False,
-                                                          load_color=True, color_file=input_color_file)
+        input, _, _, _, input_colors, _ = data_util.load_sdf(inputsdf_file, load_sparse=True, load_known=False,
+                                                             load_color=True, color_file=input_color_file)
         if input is None:
             return {'name': None}
         if self.color_truncation > 0:
