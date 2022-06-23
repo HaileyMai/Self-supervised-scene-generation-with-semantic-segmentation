@@ -129,7 +129,6 @@ def load_sdf(file, load_sparse, load_known, load_color, is_sparse_file=True, col
             color = struct.unpack('B' * num_color * 3, fin.read(num_color * 3))
             color = np.asarray(color, dtype=np.uint8).reshape([dimz, dimy, dimx, 3])
 
-    # TODO hack for now, always loads dense, needs refactoring
     if load_semantic:
         num_semantic = struct.unpack('Q', fin.read(8))[0]
         assert num_semantic == dimx * dimy * dimz
