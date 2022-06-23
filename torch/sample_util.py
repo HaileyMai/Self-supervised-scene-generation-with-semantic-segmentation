@@ -1,7 +1,7 @@
 from plyfile import PlyData
 import numpy as np
 
-def sample_point_cloud(vertices_, faces_, cat_ids, n_points_per_face, add_centers=False, uniform=False, force_total_n=False):
+def sample_point_cloud(vertices_, faces_, cat_ids, n_points_per_face, add_centers=False, uniform=False, force_total_n=False, with_semantics=True):
     triangle_vertices = np.dstack([vertices_[faces_[:, 0]], vertices_[faces_[:, 1]], vertices_[faces_[:, 2]]])
 
     if force_total_n:
@@ -18,7 +18,9 @@ def sample_point_cloud(vertices_, faces_, cat_ids, n_points_per_face, add_center
     else:
         chosen_triangles = np.repeat(np.arange(faces_.shape[0]), n_points_per_face)
     chosen_vertices = triangle_vertices[chosen_triangles, :, :]
-    category = cat_ids[chosen_triangles]
+
+    if with_semantics:
+        category = cat_ids[chosen_triangles]
 
     r1 = np.random.rand(n_points, 1)
     r2 = np.random.rand(n_points, 1)
@@ -29,19 +31,29 @@ def sample_point_cloud(vertices_, faces_, cat_ids, n_points_per_face, add_center
     if add_centers:
         centers = (vertices_[faces_[:, 0]] + vertices_[faces_[:, 1]] + vertices_[faces_[:, 2]]) / 3
         result_xyz = np.concatenate((result_xyz, centers))
-        category = np.concatenate((category, cat_ids))
-    return result_xyz, category
+        
+        if with_semantics:
+            category = np.concatenate((category, cat_ids))
+    
+    if with_semantics:
+        return result_xyz, category
+    else:
+        return result_xyz
 
 
-def sample_from_region_ply(ply_path_, num, force_total_n=False):
+def sample_from_region_ply(ply_path_, num, force_total_n=False, with_semantics=True):
     data = PlyData.read(ply_path_)
     vertices = data.elements[0]
     faces = data.elements[1]
 
     vertices_pos = np.stack([np.stack(vertices['x']), np.stack(vertices['y']), np.stack(vertices['z'])], axis=1)
     face_vertices = np.stack(faces.data['vertex_indices'])
-    category_ids = np.stack(faces.data['category_id'])
-    sampled_point_clouds, sampled_category = sample_point_cloud(vertices_pos, face_vertices, category_ids, num,
-                                                                add_centers=True, uniform=True, force_total_n=force_total_n)
-    return sampled_point_clouds, sampled_category
+    
+    if with_semantics:
+        category_ids = np.stack(faces.data['category_id'])
+    else:
+        category_ids = None
+
+    return sample_point_cloud(vertices_pos, face_vertices, category_ids, num,
+                                                                add_centers=True, uniform=True, force_total_n=force_total_n, with_semantics=with_semantics)
 

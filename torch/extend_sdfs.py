@@ -19,55 +19,12 @@ import argparse
 import zipfile
 import utils.marching_cubes.marching_cubes as mc
 import sample_util
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 """
 First run download-mp.py -o [output_dir] --type region_segmentations
 Category mapping should be taken from https://github.com/niessner/Matterport/blob/master/metadata/category_mapping.tsv
-
-Ex.: extend_sdfs.py --seg_path ../../region_segmentations --mapping ../../Matterport/metadata/category_mapping.tsv --sdf_path ../../data --output_dir ../../data_extended
 """
-
-# TODO
-# add option to delete unzipped files at the end
-# change the data_util.load_sdf extension to a not so hacky one
-# test for the occupancy and correctness of semantics on the grid
-# -> it is possible to add arbitrarily many points for every face
-# --force parameter for overwriting output files
-
-parser = argparse.ArgumentParser()
-
-parser.add_argument("--seg_path", type=str, required=True, help="output directory of the region segmentation download")
-parser.add_argument("--mapping", type=str, required=True,
-                    help="table that contains the mapping of raw_categories to ids")
-parser.add_argument("--category_list", type=str, required=True, help="table contains the mapping from index to name")
-parser.add_argument("--category_name", type=str, default="mpcat40")
-parser.add_argument("--category_taxonomy", type=str, default="mpcat40index",
-                    help="what taxonomy to use, should be a column of the mapping table")
-parser.add_argument("--raw_category", type=str, default="raw_category",
-                    help="column of mapping that contains the raw category names")
-parser.add_argument("--sdf_path", type=str, required=True, help="directory of the .sdf files")
-parser.add_argument("--output_dir", type=str, default=".", help="where to write the extended .sdf files")
-parser.add_argument("--output_vis_dir", type=str, default=".", help="where to write the extended .sdf files")
-parser.add_argument("--truncation", type=float, default=3, help="truncation in voxels")
-parser.add_argument("--samples_per_face", type=int, default=8, help="how many points are sampled from every face in average")
-
-args = parser.parse_args()
-print(args)
-
-mapping_table = pd.read_csv(args.mapping, sep="\t")[["raw_category", "mpcat40index"]]
-mpcat40_table = pd.read_csv(args.category_list, sep="\t")[["mpcat40", "mpcat40index"]]
-mpcat40index = np.array(mapping_table["mpcat40index"].values)
-mpcat40index = np.concatenate((np.array([0]), mpcat40index), axis=-1)
-
-# create a colortable for categories
-np.random.seed(6)
-mapping_label = mpcat40_table["mpcat40"].values
-mapping_color = np.zeros((42, 3))
-for i in range(42):
-    mapping_color[i] = np.random.choice(range(256), size=3)
-mapping_color[-1] = np.array([0, 0, 0])  # unlabeled: black
-mapping_color[0] = np.array([255, 255, 255])  # void: white
-
 
 def plot_colortable(colors, title, emptycols=0):
     cell_width = 212
@@ -115,13 +72,7 @@ def plot_colortable(colors, title, emptycols=0):
 
     return fig
 
-
-color_list = tuple(map(tuple, mapping_color / 255))
-category_img = plot_colortable(color_list[:], "Category List")
-category_img.savefig("Category_list.png")
-np.savez("category_color", mapping_color=mapping_color.astype(np.uint8))
-
-def add_semantics_to_chunk_sdf(sdf_file_name, points, cat, vis_path=None):
+def add_semantics_to_chunk_sdf(sdf_file_name, points, cat, mpcat40index, vis_path=None):
     sdf, world2grid, known, colors = data_util.load_sdf(
         sdf_file_name, load_sparse=False, load_known=True, load_color=True)
     dimz, dimy, dimx = sdf.shape[0], sdf.shape[1], sdf.shape[2]
@@ -172,73 +123,123 @@ def add_semantics_to_chunk_sdf(sdf_file_name, points, cat, vis_path=None):
         #                   thresh=10, output_filename=os.path.join(vis_path, sp1 + '__color__' + sp3 + '.ply'))
     return dense_semantics
 
-seg_dir = path.join(args.seg_path, "v1", "scans")
+def extend_sdf_file(segmentation, sdf_file, output_dir, output_vis_dir, region_sampled_points, region_sampled_cat, mpcat40index):
+    #print(f"Now extending {sdf_file}.")
+    room, _, sdf_number = os.path.splitext(os.path.basename(sdf_file))[0].split('__')
+    region = room.split('room')[-1]
 
-for segmentation in listdir(seg_dir):
-    unzip_path = path.join(seg_dir, segmentation)
-    print("=========================")
-    if path.exists(path.join(unzip_path, segmentation)):
-        print(f"{segmentation}: already unzipped, extracting semantics...")
-    else:
-        zip_path = path.join(seg_dir, segmentation, "region_segmentations.zip")
-        if not path.exists(zip_path):
-            print(f"{segmentation} does not contain a region_segmentations.zip")
-            continue
-        with zipfile.ZipFile(zip_path, "r") as zip_ref:
-            zip_ref.extractall(unzip_path)
-        print(f"{segmentation}: extracted region_segmentations")
+    sdf, world2grid, _, _ = data_util.load_sdf(sdf_file, load_sparse=False, load_known=False, load_color=False)
+    limits = np.concatenate((np.array([[0, 0, 0, 1]]), np.array([[sdf.shape[2], sdf.shape[1], sdf.shape[0], 1]])))
+    grid2world = np.linalg.inv(world2grid)  # transformation already considered voxel size
 
-    # sample points from all regions/rooms in the segmentation
-    # can avoid inconsistency between .ply and .sdf files (region and chunk)
-    ply_dir = path.join(unzip_path, segmentation, "region_segmentations")
-    region = 0
-    start = time.time()
-    print(f"Sampling points ...")
-    region_sampled_points, region_sampled_cat = None, None
-    while path.exists(path.join(ply_dir, "region" + str(region) + ".ply")):
-        print(f"-region {region}")
+    limits = np.matmul(grid2world, np.transpose(limits))
+    limits = np.transpose(limits)[:, :3]
+    valid = np.logical_and(region_sampled_points >= limits[0] - 0.3, region_sampled_points <= limits[1] + 0.3)
+    valid = np.all(valid, axis=1)
+    dense_sem = add_semantics_to_chunk_sdf(sdf_file, region_sampled_points[valid], region_sampled_cat[valid], mpcat40index, vis_path=output_vis_dir)
 
-        ply_path = path.join(ply_dir, "region" + str(region) + ".ply")
-        sampled_points, sampled_cat = sample_util.sample_from_region_ply(ply_path, num=args.samples_per_face)
-        if region_sampled_points is None:
-            region_sampled_points = sampled_points
-            region_sampled_cat = sampled_cat
+    out_path = path.join(output_dir, segmentation + "_room" + str(region) + "__sem__" + str(sdf_number) + ".sdf")
+    with open(sdf_file, "rb") as i:
+        with open(out_path, "wb") as o:
+            o.write(i.read())  # copy everything
+            o.write(struct.pack('Q', dense_sem.shape[0] * dense_sem.shape[1] * dense_sem.shape[2]))
+            o.write(dense_sem.tobytes())
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument("--seg_path", type=str, required=True, help="output directory of the region segmentation download")
+    parser.add_argument("--mapping", type=str, required=True,
+                        help="table that contains the mapping of raw_categories to ids")
+    parser.add_argument("--category_list", type=str, required=True, help="table contains the mapping from index to name")
+    parser.add_argument("--category_name", type=str, default="mpcat40")
+    parser.add_argument("--category_taxonomy", type=str, default="mpcat40index",
+                        help="what taxonomy to use, should be a column of the mapping table")
+    parser.add_argument("--raw_category", type=str, default="raw_category",
+                        help="column of mapping that contains the raw category names")
+    parser.add_argument("--sdf_path", type=str, required=True, help="directory of the .sdf files")
+    parser.add_argument("--output_dir", type=str, default=".", help="where to write the extended .sdf files")
+    parser.add_argument("--output_vis_dir", type=str, default=".", help="where to write the extended .sdf files")
+    parser.add_argument("--truncation", type=float, default=3, help="truncation in voxels")
+    parser.add_argument("--samples_per_face", type=int, default=8, help="how many points are sampled from every face in average")
+
+    args = parser.parse_args()
+    print(args)
+
+    mapping_table = pd.read_csv(args.mapping, sep="\t")[["raw_category", "mpcat40index"]]
+    mpcat40_table = pd.read_csv(args.category_list, sep="\t")[["mpcat40", "mpcat40index"]]
+    mpcat40index = np.array(mapping_table["mpcat40index"].values)
+    mpcat40index = np.concatenate((np.array([0]), mpcat40index), axis=-1)
+
+    # create a colortable for categories
+    np.random.seed(6)
+    mapping_label = mpcat40_table["mpcat40"].values
+    mapping_color = np.zeros((42, 3))
+    for i in range(42):
+        mapping_color[i] = np.random.choice(range(256), size=3)
+    mapping_color[-1] = np.array([0, 0, 0])  # unlabeled: black
+    mapping_color[0] = np.array([255, 255, 255])  # void: white
+
+    color_list = tuple(map(tuple, mapping_color / 255))
+    category_img = plot_colortable(color_list[:], "Category List")
+    category_img.savefig("Category_list.png")
+    np.savez("category_color", mapping_color=mapping_color.astype(np.uint8))
+
+    seg_dir = path.join(args.seg_path, "v1", "scans")
+
+    for segmentation in listdir(seg_dir):
+        unzip_path = path.join(seg_dir, segmentation)
+        print("=========================")
+        if path.exists(path.join(unzip_path, segmentation)):
+            print(f"{segmentation}: already unzipped, extracting semantics...")
         else:
-            region_sampled_points = np.concatenate((region_sampled_points, sampled_points))
-            region_sampled_cat = np.concatenate((region_sampled_cat, sampled_cat))
+            zip_path = path.join(seg_dir, segmentation, "region_segmentations.zip")
+            if not path.exists(zip_path):
+                print(f"{segmentation} does not contain a region_segmentations.zip")
+                continue
+            with zipfile.ZipFile(zip_path, "r") as zip_ref:
+                zip_ref.extractall(unzip_path)
+            print(f"{segmentation}: extracted region_segmentations")
 
-        region += 1
+        # sample points from all regions/rooms in the segmentation
+        # can avoid inconsistency between .ply and .sdf files (region and chunk)
+        ply_dir = path.join(unzip_path, segmentation, "region_segmentations")
+        region = 0
+        start = time.time()
+        print(f"Sampling points ...")
+        region_sampled_points, region_sampled_cat = None, None
+        while path.exists(path.join(ply_dir, "region" + str(region) + ".ply")):
+            print(f"-region {region}")
 
-    took = time.time() - start
-    print(f"Processed {region} regions, sampled {region_sampled_points.shape[0]} points, took {took} s.")
+            ply_path = path.join(ply_dir, "region" + str(region) + ".ply")
+            sampled_points, sampled_cat = sample_util.sample_from_region_ply(ply_path, num=args.samples_per_face)
+            if region_sampled_points is None:
+                region_sampled_points = sampled_points
+                region_sampled_cat = sampled_cat
+            else:
+                region_sampled_points = np.concatenate((region_sampled_points, sampled_points))
+                region_sampled_cat = np.concatenate((region_sampled_cat, sampled_cat))
 
-    # add valid points to corresponding sdf file(s)
-    start = time.time()
-    num_sdfs = 0
-    for sdf_file in glob.glob(args.sdf_path + str(segmentation) + '*cmp*'):
-        room, _, sdf_number = os.path.splitext(os.path.basename(sdf_file))[0].split('__')
-        region = room.split('room')[-1]
+            region += 1
 
-        sdf, world2grid, _, _ = data_util.load_sdf(sdf_file, load_sparse=False, load_known=False, load_color=False)
-        limits = np.concatenate((np.array([[0, 0, 0, 1]]), np.array([[sdf.shape[2], sdf.shape[1], sdf.shape[0], 1]])))
-        grid2world = np.linalg.inv(world2grid)  # transformation already considered voxel size
+        took = time.time() - start
+        print(f"Processed {region} regions, sampled {region_sampled_points.shape[0]} points, took {took} s.")
 
-        limits = np.matmul(grid2world, np.transpose(limits))
-        limits = np.transpose(limits)[:, :3]
-        valid = np.logical_and(region_sampled_points >= limits[0] - 0.3, region_sampled_points <= limits[1] + 0.3)
-        valid = np.all(valid, axis=1)
-        dense_sem = add_semantics_to_chunk_sdf(sdf_file, region_sampled_points[valid], region_sampled_cat[valid], vis_path=args.output_vis_dir)
+        # add valid points to corresponding sdf file(s)
+        paths = glob.glob(args.sdf_path + str(segmentation) + '*cmp*')
+        start = time.time()
+        with ThreadPoolExecutor(max_workers = 4) as executor:
+            future_dict = {executor.submit(extend_sdf_file, segmentation, sdf_file, args.output_dir, args.output_vis_dir, region_sampled_points, region_sampled_cat, mpcat40index): sdf_file for sdf_file in paths}
 
-        out_path = path.join(args.output_dir, segmentation + "_room" + str(region) + "__sem__" + str(sdf_number) + ".sdf")
-        with open(sdf_file, "rb") as i:
-            with open(out_path, "wb") as o:
-                o.write(i.read())  # copy everything
-                o.write(struct.pack('Q', dense_sem.shape[0] * dense_sem.shape[1] * dense_sem.shape[2]))
-                o.write(dense_sem.tobytes())
+            for future in as_completed(future_dict):
+                sdf = future_dict[future]
+                try:
+                    future.result()
+                except Exception as e:
+                    print((sdf, e))
 
-        num_sdfs += 1
+        took = time.time() - start
+        print(f"Processed {len(paths)} sdf files, took {took} s.")
 
-    took = time.time() - start
-    print(f"Processed {num_sdfs} sdf files, took {took} s.")
-
-print("Done.")
+    print("Done.")
