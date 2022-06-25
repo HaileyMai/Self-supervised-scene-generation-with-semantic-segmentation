@@ -118,7 +118,7 @@ args.batch_size = 1
 args.num_iters_geo_only = 1000
 #args.save = './logs_2d'
 args.weight_semantic_loss = 0.1
-pred_semantic_3d = False
+pred_semantic_3d = True
 args.weight_disc_loss = 0.5
 print(args)
 
@@ -219,7 +219,7 @@ if len(val_files) > 0:
 
 def make_log_header_list(id):
     headers = ['%s_loss(total)' % id, '%s_loss(occ)' % id, '%s_iou(occ)' % id, '%s_loss(sdf)' % id,
-               '%s_loss(depth)' % id, '%s_loss(color)' % id, '%s_loss(disc)' % id, '%s_loss(disc-real)' % id,
+               '%s_loss(depth)' % id, '%s_loss(color)' % id, '%s_loss(semantic)' % id, '%s_loss(disc)' % id, '%s_loss(disc-real)' % id,
                '%s_loss(disc-fake)' % id, '%s_loss(gen)' % id, '%s_loss(style)' % id, '%s_loss(content)' % id, 'time']
     return headers
 
