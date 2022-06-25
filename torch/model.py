@@ -417,19 +417,34 @@ class Generator(nn.Module):
         )
         # up for semantic prediction
         self.sem_2 = nn.Sequential(
-            torch.nn.Conv3d(nf_factor * self.nf, 3 * self.n_classes, 3, 1, 1, bias=self.use_bias),
+            nn.Conv3d(nf_factor * self.nf, nf_factor * nfr, 3, 1, 1, bias=self.use_bias),
             nn.LeakyReLU(0.2, True),
-            nn.BatchNorm3d(3 * self.n_classes),
-            torch.nn.Conv3d(3 * self.n_classes, 2 * self.n_classes, (kz[12], 3, 3), 1, 1, bias=self.use_bias),
+            nn.BatchNorm3d(nf_factor * nfr),
+            nn.Conv3d(nf_factor * nfr, nf_factor * nfr, 3, 1, 1, bias=self.use_bias),
             nn.LeakyReLU(0.2, True),
-            nn.BatchNorm3d(2 * self.n_classes)
+            nn.BatchNorm3d(nf_factor * nfr),
+            nn.Conv3d(nf_factor * nfr, nf_factor * nfr, 3, 1, 1, bias=self.use_bias),
+            nn.LeakyReLU(0.2, True),
+            nn.BatchNorm3d(nf_factor * nfr),
+            # nn.Conv3d(nf_factor * nfr, nf_factor * nfr, 3, 1, 1, bias=self.use_bias),
+            # nn.LeakyReLU(0.2, True),
+            # nn.BatchNorm3d(nf_factor * nfr),
+            # nn.Conv3d(nf_factor * nfr, nf_factor * nfr, (kz[12], 3, 3), 1, 1, bias=self.use_bias),
+            # nn.LeakyReLU(0.2, True),
+            # nn.BatchNorm3d(nf_factor * nfr)
         )
 
         self.sem_3 = nn.Sequential(
-            torch.nn.Conv3d(2 * self.n_classes, int(1.5 * self.n_classes), 3, 1, 1, bias=self.use_bias),
+            torch.nn.Conv3d(nf_factor * nfr, nf_factor * nfr, 3, 1, 1, bias=self.use_bias),
             nn.LeakyReLU(0.2, True),
-            nn.BatchNorm3d(int(1.5 * self.n_classes)),
-            torch.nn.Conv3d(int(1.5 * self.n_classes), self.n_classes, (kz[12], 3, 3), 1, 1, bias=self.use_bias),
+            nn.BatchNorm3d(nf_factor * nfr),
+            # torch.nn.Conv3d(nf_factor * nfr, nf_factor * nfr, 3, 1, 1, bias=self.use_bias),
+            # nn.LeakyReLU(0.2, True),
+            # nn.BatchNorm3d(nf_factor * nfr),
+            torch.nn.Conv3d(nf_factor * nfr, nf_factor * nfr, 3, 1, 1, bias=self.use_bias),
+            nn.LeakyReLU(0.2, True),
+            nn.BatchNorm3d(nf_factor * nfr),
+            torch.nn.Conv3d(nf_factor * nfr, self.n_classes, (kz[12], 3, 3), 1, 1, bias=self.use_bias),
             nn.LeakyReLU(0.2, True),
             nn.BatchNorm3d(self.n_classes)
         )
@@ -452,7 +467,7 @@ class Generator(nn.Module):
     def update_sizes(self, input_max_dim):
         self.max_data_size = input_max_dim
 
-    def forward(self, x, mask, pred_color, pred_sdf, pred_semantic):
+    def forward(self, x, mask, pred_color, pred_sdf, pred_semantic=False):
         if self.input_mask:
             x = torch.cat([x, mask], 1)
             x_geo = x[:, :1, :, :, :]
