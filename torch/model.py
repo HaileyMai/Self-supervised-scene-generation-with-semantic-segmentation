@@ -426,12 +426,12 @@ class Generator(nn.Module):
             nn.Conv3d(nf_factor * nfr, nf_factor * nfr, 3, 1, 1, bias=self.use_bias),
             nn.LeakyReLU(0.2, True),
             nn.BatchNorm3d(nf_factor * nfr),
-            # nn.Conv3d(nf_factor * nfr, nf_factor * nfr, 3, 1, 1, bias=self.use_bias),
-            # nn.LeakyReLU(0.2, True),
-            # nn.BatchNorm3d(nf_factor * nfr),
-            # nn.Conv3d(nf_factor * nfr, nf_factor * nfr, (kz[12], 3, 3), 1, 1, bias=self.use_bias),
-            # nn.LeakyReLU(0.2, True),
-            # nn.BatchNorm3d(nf_factor * nfr)
+            nn.Conv3d(nf_factor * nfr, nf_factor * nfr, 3, 1, 1, bias=self.use_bias),
+            nn.LeakyReLU(0.2, True),
+            nn.BatchNorm3d(nf_factor * nfr),
+            nn.Conv3d(nf_factor * nfr, nf_factor * nfr, (kz[12], 3, 3), 1, 1, bias=self.use_bias),
+            nn.LeakyReLU(0.2, True),
+            nn.BatchNorm3d(nf_factor * nfr)
         )
 
         self.sem_3 = nn.Sequential(
