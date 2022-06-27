@@ -416,37 +416,35 @@ class Generator(nn.Module):
             nn.Conv3d(nfr // 2, 3, 1, 1, 0, bias=self.use_bias)
         )
         # up for semantic prediction
+
+        sem_dilation = 4
+        sem_factor = 2
         self.sem_2 = nn.Sequential(
-            nn.Conv3d(nf_factor * self.nf, nf_factor * nfr, 3, 1, 1, bias=self.use_bias),
+            nn.Conv3d(nf_factor * self.nf, sem_factor * self.n_classes, 3, 1, sem_dilation, bias=self.use_bias, dilation=sem_dilation),
             nn.LeakyReLU(0.2, True),
-            nn.BatchNorm3d(nf_factor * nfr),
-            nn.Conv3d(nf_factor * nfr, nf_factor * nfr, 3, 1, 1, bias=self.use_bias),
+            nn.BatchNorm3d(sem_factor * self.n_classes),
+            nn.Conv3d(sem_factor * self.n_classes, sem_factor * self.n_classes, 3, 1, sem_dilation, bias=self.use_bias, dilation=sem_dilation),
             nn.LeakyReLU(0.2, True),
-            nn.BatchNorm3d(nf_factor * nfr),
-            nn.Conv3d(nf_factor * nfr, nf_factor * nfr, 3, 1, 1, bias=self.use_bias),
+            nn.BatchNorm3d(sem_factor * self.n_classes),
+            nn.Conv3d(sem_factor * self.n_classes, sem_factor * self.n_classes, 3, 1, sem_dilation, bias=self.use_bias, dilation=sem_dilation),
             nn.LeakyReLU(0.2, True),
-            nn.BatchNorm3d(nf_factor * nfr),
-            nn.Conv3d(nf_factor * nfr, nf_factor * nfr, 3, 1, 1, bias=self.use_bias),
+            nn.BatchNorm3d(sem_factor * self.n_classes),
+            nn.Conv3d(sem_factor * self.n_classes, sem_factor * self.n_classes, 3, 1, 1, bias=self.use_bias),
             nn.LeakyReLU(0.2, True),
-            nn.BatchNorm3d(nf_factor * nfr),
-            nn.Conv3d(nf_factor * nfr, nf_factor * nfr, (kz[12], 3, 3), 1, 1, bias=self.use_bias),
+            nn.BatchNorm3d(sem_factor * self.n_classes),
+            nn.Conv3d(sem_factor * self.n_classes, sem_factor * self.n_classes, (kz[12], 3, 3), 1, 1, bias=self.use_bias),
             nn.LeakyReLU(0.2, True),
-            nn.BatchNorm3d(nf_factor * nfr)
+            nn.BatchNorm3d(sem_factor * self.n_classes)
         )
 
         self.sem_3 = nn.Sequential(
-            torch.nn.Conv3d(nf_factor * nfr, nf_factor * nfr, 3, 1, 1, bias=self.use_bias),
+            nn.Conv3d(sem_factor * self.n_classes, sem_factor * self.n_classes, 3, 1, 1, bias=self.use_bias),
             nn.LeakyReLU(0.2, True),
-            nn.BatchNorm3d(nf_factor * nfr),
-            # torch.nn.Conv3d(nf_factor * nfr, nf_factor * nfr, 3, 1, 1, bias=self.use_bias),
-            # nn.LeakyReLU(0.2, True),
-            # nn.BatchNorm3d(nf_factor * nfr),
-            torch.nn.Conv3d(nf_factor * nfr, nf_factor * nfr, 3, 1, 1, bias=self.use_bias),
+            nn.BatchNorm3d(sem_factor * self.n_classes),
+            nn.Conv3d(sem_factor * self.n_classes, sem_factor * self.n_classes, 3, 1, 1, bias=self.use_bias),
             nn.LeakyReLU(0.2, True),
-            nn.BatchNorm3d(nf_factor * nfr),
-            torch.nn.Conv3d(nf_factor * nfr, self.n_classes, (kz[12], 3, 3), 1, 1, bias=self.use_bias),
-            nn.LeakyReLU(0.2, True),
-            nn.BatchNorm3d(self.n_classes)
+            nn.BatchNorm3d(sem_factor * self.n_classes),
+            nn.Conv3d(sem_factor * self.n_classes, self.n_classes, (kz[12], 3, 3), 1, 1, bias=self.use_bias)
         )
 
         num_params_geo = count_num_model_params(self.geo_0) + count_num_model_params(
