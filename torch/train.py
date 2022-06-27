@@ -118,7 +118,9 @@ args.batch_size = 1
 args.num_iters_geo_only = 1000
 #args.save = './logs_2d'
 args.weight_semantic_loss = 0.1
-pred_semantic_3d = True
+args.weight_color_loss = 0
+args.weight_content_loss = 0
+pred_semantic_3d = False
 args.weight_disc_loss = 0.5
 print(args)
 

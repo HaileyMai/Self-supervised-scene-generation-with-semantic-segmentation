@@ -486,7 +486,7 @@ class Generator(nn.Module):
 
         out_color = None
         out_semantic = None
-        if pred_color:
+        if pred_color or pred_semantic:
             x_color = x[:, 1:4, :, :, :]
             x_color = x_color * 2 - 1
             if self.input_mask:
@@ -499,6 +499,8 @@ class Generator(nn.Module):
                 encoded = torch.cat((encoded, pass_geo), dim=1)
             encoded = self.color_1(encoded)
             encoded = nn.functional.interpolate(encoded, scale_factor=scale_factor, mode=self.interpolate_mode)
+        
+        if pred_color:
             color = self.color_2(encoded)
             color = nn.functional.interpolate(color, scale_factor=scale_factor, mode=self.interpolate_mode)
             color = self.color_3(color)
@@ -514,9 +516,9 @@ class Generator(nn.Module):
             out_color = self.refine_color_3(color)
             out_color = torch.clamp(out_color, -1., 1.)
 
-            if pred_semantic:
-                out_semantic = self.sem_2(encoded)
-                out_semantic = nn.functional.interpolate(out_semantic, scale_factor=scale_factor, mode=self.interpolate_mode)
-                out_semantic = self.sem_3(out_semantic)
+        if pred_semantic:
+            out_semantic = self.sem_2(encoded)
+            out_semantic = nn.functional.interpolate(out_semantic, scale_factor=scale_factor, mode=self.interpolate_mode)
+            out_semantic = self.sem_3(out_semantic)
 
         return out_occ, out_sdf, out_color, out_semantic
