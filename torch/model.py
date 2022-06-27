@@ -416,37 +416,35 @@ class Generator(nn.Module):
             nn.Conv3d(nfr // 2, 3, 1, 1, 0, bias=self.use_bias)
         )
         # up for semantic prediction
+
+        sem_dilation = 4
+        sem_factor = 2
         self.sem_2 = nn.Sequential(
-            nn.Conv3d(nf_factor * self.nf, nf_factor * nfr, 3, 1, 1, bias=self.use_bias),
+            nn.Conv3d(nf_factor * self.nf, sem_factor * self.n_classes, 3, 1, sem_dilation, bias=self.use_bias, dilation=sem_dilation),
             nn.LeakyReLU(0.2, True),
-            nn.BatchNorm3d(nf_factor * nfr),
-            nn.Conv3d(nf_factor * nfr, nf_factor * nfr, 3, 1, 1, bias=self.use_bias),
+            nn.BatchNorm3d(sem_factor * self.n_classes),
+            nn.Conv3d(sem_factor * self.n_classes, sem_factor * self.n_classes, 3, 1, sem_dilation, bias=self.use_bias, dilation=sem_dilation),
             nn.LeakyReLU(0.2, True),
-            nn.BatchNorm3d(nf_factor * nfr),
-            nn.Conv3d(nf_factor * nfr, nf_factor * nfr, 3, 1, 1, bias=self.use_bias),
+            nn.BatchNorm3d(sem_factor * self.n_classes),
+            nn.Conv3d(sem_factor * self.n_classes, sem_factor * self.n_classes, 3, 1, sem_dilation, bias=self.use_bias, dilation=sem_dilation),
             nn.LeakyReLU(0.2, True),
-            nn.BatchNorm3d(nf_factor * nfr),
-            nn.Conv3d(nf_factor * nfr, nf_factor * nfr, 3, 1, 1, bias=self.use_bias),
+            nn.BatchNorm3d(sem_factor * self.n_classes),
+            nn.Conv3d(sem_factor * self.n_classes, sem_factor * self.n_classes, 3, 1, 1, bias=self.use_bias),
             nn.LeakyReLU(0.2, True),
-            nn.BatchNorm3d(nf_factor * nfr),
-            nn.Conv3d(nf_factor * nfr, nf_factor * nfr, (kz[12], 3, 3), 1, 1, bias=self.use_bias),
+            nn.BatchNorm3d(sem_factor * self.n_classes),
+            nn.Conv3d(sem_factor * self.n_classes, sem_factor * self.n_classes, (kz[12], 3, 3), 1, 1, bias=self.use_bias),
             nn.LeakyReLU(0.2, True),
-            nn.BatchNorm3d(nf_factor * nfr)
+            nn.BatchNorm3d(sem_factor * self.n_classes)
         )
 
         self.sem_3 = nn.Sequential(
-            torch.nn.Conv3d(nf_factor * nfr, nf_factor * nfr, 3, 1, 1, bias=self.use_bias),
+            nn.Conv3d(sem_factor * self.n_classes, sem_factor * self.n_classes, 3, 1, 1, bias=self.use_bias),
             nn.LeakyReLU(0.2, True),
-            nn.BatchNorm3d(nf_factor * nfr),
-            # torch.nn.Conv3d(nf_factor * nfr, nf_factor * nfr, 3, 1, 1, bias=self.use_bias),
-            # nn.LeakyReLU(0.2, True),
-            # nn.BatchNorm3d(nf_factor * nfr),
-            torch.nn.Conv3d(nf_factor * nfr, nf_factor * nfr, 3, 1, 1, bias=self.use_bias),
+            nn.BatchNorm3d(sem_factor * self.n_classes),
+            nn.Conv3d(sem_factor * self.n_classes, sem_factor * self.n_classes, 3, 1, 1, bias=self.use_bias),
             nn.LeakyReLU(0.2, True),
-            nn.BatchNorm3d(nf_factor * nfr),
-            torch.nn.Conv3d(nf_factor * nfr, self.n_classes, (kz[12], 3, 3), 1, 1, bias=self.use_bias),
-            nn.LeakyReLU(0.2, True),
-            nn.BatchNorm3d(self.n_classes)
+            nn.BatchNorm3d(sem_factor * self.n_classes),
+            nn.Conv3d(sem_factor * self.n_classes, self.n_classes, (kz[12], 3, 3), 1, 1, bias=self.use_bias)
         )
 
         num_params_geo = count_num_model_params(self.geo_0) + count_num_model_params(
@@ -488,7 +486,7 @@ class Generator(nn.Module):
 
         out_color = None
         out_semantic = None
-        if pred_color:
+        if pred_color or pred_semantic:
             x_color = x[:, 1:4, :, :, :]
             x_color = x_color * 2 - 1
             if self.input_mask:
@@ -501,6 +499,8 @@ class Generator(nn.Module):
                 encoded = torch.cat((encoded, pass_geo), dim=1)
             encoded = self.color_1(encoded)
             encoded = nn.functional.interpolate(encoded, scale_factor=scale_factor, mode=self.interpolate_mode)
+        
+        if pred_color:
             color = self.color_2(encoded)
             color = nn.functional.interpolate(color, scale_factor=scale_factor, mode=self.interpolate_mode)
             color = self.color_3(color)
@@ -516,9 +516,9 @@ class Generator(nn.Module):
             out_color = self.refine_color_3(color)
             out_color = torch.clamp(out_color, -1., 1.)
 
-            if pred_semantic:
-                out_semantic = self.sem_2(encoded)
-                out_semantic = nn.functional.interpolate(out_semantic, scale_factor=scale_factor, mode=self.interpolate_mode)
-                out_semantic = self.sem_3(out_semantic)
+        if pred_semantic:
+            out_semantic = self.sem_2(encoded)
+            out_semantic = nn.functional.interpolate(out_semantic, scale_factor=scale_factor, mode=self.interpolate_mode)
+            out_semantic = self.sem_3(out_semantic)
 
         return out_occ, out_sdf, out_color, out_semantic
