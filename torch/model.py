@@ -417,34 +417,40 @@ class Generator(nn.Module):
         )
         # up for semantic prediction
 
-        sem_dilation = 4
-        sem_factor = 2
+        sem_dilation = [8, 8, 4, 1, 1]
+        sem_factor = [2, 2, 2]
         self.sem_2 = nn.Sequential(
-            nn.Conv3d(nf_factor * self.nf, sem_factor * self.n_classes, 3, 1, sem_dilation, bias=self.use_bias, dilation=sem_dilation),
+            nn.Conv3d(nf_factor * self.nf, int(sem_factor[0] * self.n_classes), 3, 1, sem_dilation[0], bias=self.use_bias, dilation=sem_dilation[0]),
             nn.LeakyReLU(0.2, True),
-            nn.BatchNorm3d(sem_factor * self.n_classes),
-            nn.Conv3d(sem_factor * self.n_classes, sem_factor * self.n_classes, 3, 1, sem_dilation, bias=self.use_bias, dilation=sem_dilation),
+            nn.BatchNorm3d(int(sem_factor[0] * self.n_classes)),
+            nn.Conv3d(int(sem_factor[0] * self.n_classes), int(sem_factor[0] * self.n_classes), 3, 1, sem_dilation[1], bias=self.use_bias, dilation=sem_dilation[1]),
             nn.LeakyReLU(0.2, True),
-            nn.BatchNorm3d(sem_factor * self.n_classes),
-            nn.Conv3d(sem_factor * self.n_classes, sem_factor * self.n_classes, 3, 1, sem_dilation, bias=self.use_bias, dilation=sem_dilation),
+            nn.BatchNorm3d(int(sem_factor[0] * self.n_classes)),
+            nn.Conv3d(int(sem_factor[0] * self.n_classes), int(sem_factor[0] * self.n_classes), 3, 1, sem_dilation[2], bias=self.use_bias, dilation=sem_dilation[2]),
             nn.LeakyReLU(0.2, True),
-            nn.BatchNorm3d(sem_factor * self.n_classes),
-            nn.Conv3d(sem_factor * self.n_classes, sem_factor * self.n_classes, 3, 1, 1, bias=self.use_bias),
+            nn.BatchNorm3d(int(sem_factor[0] * self.n_classes)),
+            nn.Conv3d(int(sem_factor[0] * self.n_classes), int(sem_factor[0] * self.n_classes), 3, 1, sem_dilation[3], bias=self.use_bias, dilation=sem_dilation[3]),
             nn.LeakyReLU(0.2, True),
-            nn.BatchNorm3d(sem_factor * self.n_classes),
-            nn.Conv3d(sem_factor * self.n_classes, sem_factor * self.n_classes, (kz[12], 3, 3), 1, 1, bias=self.use_bias),
+            nn.BatchNorm3d(int(sem_factor[0] * self.n_classes)),
+            # nn.Conv3d(int(sem_factor[0] * self.n_classes), int(sem_factor[1] * self.n_classes), 3, 1, sem_dilation[4], bias=self.use_bias, dilation=sem_dilation[4]),
+            # nn.LeakyReLU(0.2, True),
+            # nn.BatchNorm3d(int(sem_factor[1] * self.n_classes)),
+            # nn.Conv3d(int(sem_factor[1] * self.n_classes), int(sem_factor[1] * self.n_classes), 3, 1, 1, bias=self.use_bias),
+            # nn.LeakyReLU(0.2, True),
+            # nn.BatchNorm3d(int(sem_factor[1] * self.n_classes)),
+            nn.Conv3d(int(sem_factor[0] * self.n_classes), int(sem_factor[1] * self.n_classes), (kz[12], 3, 3), 1, 1, bias=self.use_bias),
             nn.LeakyReLU(0.2, True),
-            nn.BatchNorm3d(sem_factor * self.n_classes)
+            nn.BatchNorm3d(int(sem_factor[1] * self.n_classes))
         )
 
         self.sem_3 = nn.Sequential(
-            nn.Conv3d(sem_factor * self.n_classes, sem_factor * self.n_classes, 3, 1, 1, bias=self.use_bias),
+            nn.Conv3d(int(sem_factor[1] * self.n_classes), int(sem_factor[2] * self.n_classes), 3, 1, 1, bias=self.use_bias),
             nn.LeakyReLU(0.2, True),
-            nn.BatchNorm3d(sem_factor * self.n_classes),
-            nn.Conv3d(sem_factor * self.n_classes, sem_factor * self.n_classes, 3, 1, 1, bias=self.use_bias),
+            nn.BatchNorm3d(int(sem_factor[2] * self.n_classes)),
+            nn.Conv3d(int(sem_factor[2] * self.n_classes), int(sem_factor[2] * self.n_classes), 3, 1, 1, bias=self.use_bias),
             nn.LeakyReLU(0.2, True),
-            nn.BatchNorm3d(sem_factor * self.n_classes),
-            nn.Conv3d(sem_factor * self.n_classes, self.n_classes, (kz[12], 3, 3), 1, 1, bias=self.use_bias)
+            nn.BatchNorm3d(int(sem_factor[2] * self.n_classes)),
+            nn.Conv3d(int(sem_factor[2] * self.n_classes), self.n_classes, (kz[12], 3, 3), 1, 1, bias=self.use_bias)
         )
 
         num_params_geo = count_num_model_params(self.geo_0) + count_num_model_params(
