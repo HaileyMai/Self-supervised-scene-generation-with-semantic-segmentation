@@ -20,8 +20,8 @@ values = [e.split('=')[1] for e in params.split(', ')]
 keys = [e.split('=')[0] for e in params.split(', ')]
 params = dict(zip(keys, values))
 weight_depth_loss = float(params['weight_depth_loss'])
-weight_disc_loss = float(params['weight_disc_loss'])
-weight_discgen_loss = float(params['weight_discgen_loss'])
+# weight_disc_loss = float(params['weight_disc_loss'])
+# weight_discgen_loss = float(params['weight_discgen_loss'])
 weight_occ_loss = float(params['weight_occ_loss'])
 weight_sdf_loss = float(params['weight_sdf_loss'])
 weight_color_loss = float(params['weight_color_loss'])
@@ -84,8 +84,6 @@ plt.figure()
 plt.plot(iteration, train_iou_occ)
 plt.axis([0, None, 0, 1])
 plt.yticks(np.arange(0, 1.1, .1))
-plt.xlabel('iter')
-plt.ylabel('iou')
 plt.show()
 
 if args.val:

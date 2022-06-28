@@ -122,9 +122,9 @@ def add_semantics_to_chunk_sdf(sdf_file_name, points, cat, mpcat40index, vis_pat
         [sp1, _, sp3] = os.path.splitext(os.path.basename(sdf_file_name))[0].split('__')
         mc.marching_cubes(torch.from_numpy(target_for_sdf[0, 0]), dense_sem_color, isovalue=0, truncation=2.9,
                           thresh=10, output_filename=os.path.join(vis_path, sp1 + '__sem__' + sp3 + '.ply'))
-        # target_for_colors = torch.from_numpy(target_for_colors).byte()
-        # mc.marching_cubes(torch.from_numpy(target_for_sdf[0, 0]), target_for_colors[0], isovalue=0, truncation=2.9,
-        #                   thresh=10, output_filename=os.path.join(vis_path, sp1 + '__color__' + sp3 + '.ply'))
+        target_for_colors = torch.from_numpy(target_for_colors).byte()
+        mc.marching_cubes(torch.from_numpy(target_for_sdf[0, 0]), target_for_colors[0], isovalue=0, truncation=2.9,
+                          thresh=10, output_filename=os.path.join(vis_path, sp1 + '__color__' + sp3 + '.ply'))
     return dense_semantics
 
 
@@ -169,7 +169,7 @@ if __name__ == "__main__":
                         help="column of mapping that contains the raw category names")
     parser.add_argument("--sdf_path", type=str, required=True, help="directory of the .sdf files")
     parser.add_argument("--output_dir", type=str, default=".", help="where to write the extended .sdf files")
-    parser.add_argument("--output_vis_dir", type=str, default=".", help="where to write the extended .sdf files")
+    parser.add_argument("--output_vis_dir", type=str, default=None, help="where to write the color and sem meshes")
     parser.add_argument("--truncation", type=float, default=3, help="truncation in voxels")
     parser.add_argument("--samples_per_face", type=int, default=8,
                         help="how many points are sampled from every face in average")
@@ -199,6 +199,7 @@ if __name__ == "__main__":
 
     seg_dir = path.join(args.seg_path, "v1", "scans")
 
+    num_scenes = 0
     class_weight = []
     for segmentation in listdir(seg_dir):
         if args.max_scenes is not None and args.max_scenes <= num_scenes:
@@ -221,7 +222,7 @@ if __name__ == "__main__":
         # sample points from all regions/rooms in the segmentation
         # can avoid inconsistency between .ply and .sdf files (region and chunk)
         ply_dir = path.join(unzip_path, segmentation, "region_segmentations")
-        region = 0
+        region = 30
         start = time.time()
         print(f"Sampling points ...")
         region_sampled_points, region_sampled_cat = None, None
@@ -252,22 +253,23 @@ if __name__ == "__main__":
         class_weight.append(w)
 
         # add valid points to corresponding sdf file(s)
-        # paths = glob.glob(args.sdf_path + str(segmentation) + '*cmp*')
-        # start = time.time()
-        # with ThreadPoolExecutor(max_workers=4) as executor:
-        #     future_dict = {
-        #         executor.submit(extend_sdf_file, segmentation, sdf_file, args.output_dir, args.output_vis_dir,
-        #                         region_sampled_points, region_sampled_cat, mpcat40index): sdf_file for sdf_file in paths}
-        #
-        #     for future in as_completed(future_dict):
-        #         sdf = future_dict[future]
-        #         try:
-        #             future.result()
-        #         except Exception as e:
-        #             print((sdf, e))
-        #
-        # took = time.time() - start
-        # print(f"Processed {len(paths)} sdf files, took {took} s.")
+        paths = glob.glob(args.sdf_path + str(segmentation) + '*cmp*')
+        start = time.time()
+        with ThreadPoolExecutor(max_workers=4) as executor:
+            future_dict = {
+                executor.submit(extend_sdf_file, segmentation, sdf_file, args.output_dir, args.output_vis_dir,
+                                region_sampled_points, region_sampled_cat, mpcat40index): sdf_file for sdf_file in paths}
+
+            for future in as_completed(future_dict):
+                sdf = future_dict[future]
+                try:
+                    future.result()
+                except Exception as e:
+                    print((sdf, e))
+
+        took = time.time() - start
+        print(f"Processed {len(paths)} sdf files, took {took} s.")
+        num_scenes += 1
 
     class_weight = np.array(class_weight).mean(axis=0)
     mask = class_weight > 0
