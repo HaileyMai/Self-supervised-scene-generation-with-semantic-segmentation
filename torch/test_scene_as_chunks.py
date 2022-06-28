@@ -81,6 +81,8 @@ def test(dataloader, output_vis, num_to_vis):
     num_vis = 0
     num_batches = len(dataloader)
     with torch.no_grad():
+        iou_total = 0
+        sample_total = 0
         for t, sample in enumerate(dataloader):
             inputs = sample['input']
             sdfs = sample['sdf']
@@ -116,6 +118,8 @@ def test(dataloader, output_vis, num_to_vis):
             chunk_target_colors = torch.zeros(1, chunk_dim[0], chunk_dim[1], chunk_dim[2], 3, dtype=torch.uint8).cuda()
             chunk_target_semantic = 41 * torch.ones(1, 1, chunk_dim[0], chunk_dim[1], chunk_dim[2], dtype=torch.uint8).cuda()
 
+            iou_sum = 0
+            chunks = 0
             for y in range(0, max_input_dim[1], args.stride):
                 for x in range(0, max_input_dim[2], args.stride):
                     chunk_input_mask = torch.abs(
@@ -149,6 +153,21 @@ def test(dataloader, output_vis, num_to_vis):
                     output_occ, output_sdf, output_color, output_semantic = model(
                         chunk_input, chunk_mask, pred_sdf=[True, True], pred_color=args.weight_color_loss > 0,
                         pred_semantic=args.weight_semantic_loss > 0)
+
+                    inside_target = torch.zeros(chunk_target_sdf.shape, dtype=torch.bool)
+                    inside_target[chunk_target_sdf > 0] = True
+
+                    inside_output = torch.zeros(output_sdf.shape, dtype=torch.bool)
+                    inside_output[output_sdf > 0] = True
+
+                    union = torch.logical_or(inside_target, inside_output)
+                    intersection = torch.logical_and(inside_target, inside_output)
+
+                    union = torch.sum(union)
+                    intersection = torch.sum(intersection)
+                    iou = intersection.item() / union.item()
+                    iou_sum += iou
+                    chunks += 1
 
                     if output_occ is not None:
                         occ = torch.nn.Sigmoid()(output_occ.detach()) > 0.5
@@ -201,6 +220,10 @@ def test(dataloader, output_vis, num_to_vis):
                         output_semantics[0, :, output_locs[:, 0], output_locs[:, 1], output_locs[:, 2]] += output_semantic.permute(1, 0).detach().cpu()
                     output_sdfs[0, 0, output_locs[:, 0], output_locs[:, 1], output_locs[:, 2]] += output_sdf[1][:, 0].detach().cpu()
                     output_norms[0, 0, output_locs[:, 0], output_locs[:, 1], output_locs[:, 2]] += 1
+            
+            print(f"Mean IoU: {iou_sum / chunks}")
+            iou_total += iou_sum / chunks
+            sample_total += 1
 
             # normalize
             mask = output_norms > 0
@@ -239,6 +262,7 @@ def test(dataloader, output_vis, num_to_vis):
             num_proc += 1
             gc.collect()
 
+        print(f"Mean IoU total: {iou_total / sample_total}")
     sys.stdout.write('\n')
 
 
