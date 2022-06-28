@@ -63,7 +63,7 @@ plt.figure(1)
 # plt.plot(iteration, train_loss_total, label='total')
 plt.plot(iteration, train_loss_occ * weight_occ_loss + train_loss_sdf * weight_sdf_loss
          + train_loss_depth * weight_depth_loss + train_loss_color * weight_color_loss
-         + train_loss_semantic * weight_semantic_loss)
+         + train_loss_semantic * weight_semantic_loss, label='total')
 plt.plot(iteration, train_loss_occ * weight_occ_loss + train_loss_sdf * weight_sdf_loss, label='occ+sdf')
 # plt.plot(iteration, train_loss_occ * weight_occ_loss, label='occ')
 # plt.plot(iteration, train_loss_sdf * weight_sdf_loss, label='sdf')
@@ -74,10 +74,18 @@ if weight_semantic_loss > 0:
     plt.plot(iteration, train_loss_semantic * weight_semantic_loss, label='semantic')
 plt.title(args.name + ' train loss')
 plt.legend()
-plt.axis([0, 5000, 0, 0.3])
+plt.axis([0, None, 0, None])
 plt.xlabel('iter')
 plt.ylabel('losses')
 plt.savefig(os.path.join(args.output, args.name + '_train_losses'))
+plt.show()
+
+plt.figure()
+plt.plot(iteration, train_iou_occ)
+plt.axis([0, None, 0, 1])
+plt.yticks(np.arange(0, 1.1, .1))
+plt.xlabel('iter')
+plt.ylabel('iou')
 plt.show()
 
 if args.val:
@@ -152,7 +160,7 @@ if args.val:
         plt.plot(epoch, val_loss_semantic * weight_semantic_loss, '--x', label='val_semantic')
     plt.title(args.name + ' val loss')
     plt.legend()
-    plt.axis([0, 5, 0, 0.3])
+    plt.axis([0, None, 0, None])
     plt.xticks(np.arange(min(epoch), max(epoch)+1, 1))
     plt.xlabel('epoch')
     plt.ylabel('losses')

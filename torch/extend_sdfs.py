@@ -4,6 +4,8 @@ from http.client import UNAUTHORIZED
 
 import os
 import glob
+
+import collections
 from plyfile import PlyData, PlyElement
 from os import path, listdir
 import json
@@ -197,7 +199,7 @@ if __name__ == "__main__":
 
     seg_dir = path.join(args.seg_path, "v1", "scans")
 
-    num_scenes = 0
+    class_weight = []
     for segmentation in listdir(seg_dir):
         if args.max_scenes is not None and args.max_scenes <= num_scenes:
             print("Max number of scenes reached, done.")
@@ -240,23 +242,37 @@ if __name__ == "__main__":
         took = time.time() - start
         print(f"Processed {region} regions, sampled {region_sampled_points.shape[0]} points, took {took} s.")
 
+        # approximately calculate label frequency
+        label_freq = collections.Counter(mpcat40index[region_sampled_cat])
+        d = collections.Counter(label_freq)
+        w = np.zeros(42)
+        for idx, num in d.items():
+            w[idx] = num
+        w = w / w.sum()
+        class_weight.append(w)
+
         # add valid points to corresponding sdf file(s)
-        paths = glob.glob(args.sdf_path + str(segmentation) + '*cmp*')
-        start = time.time()
-        with ThreadPoolExecutor(max_workers=4) as executor:
-            future_dict = {
-                executor.submit(extend_sdf_file, segmentation, sdf_file, args.output_dir, args.output_vis_dir,
-                                region_sampled_points, region_sampled_cat, mpcat40index): sdf_file for sdf_file in paths}
+        # paths = glob.glob(args.sdf_path + str(segmentation) + '*cmp*')
+        # start = time.time()
+        # with ThreadPoolExecutor(max_workers=4) as executor:
+        #     future_dict = {
+        #         executor.submit(extend_sdf_file, segmentation, sdf_file, args.output_dir, args.output_vis_dir,
+        #                         region_sampled_points, region_sampled_cat, mpcat40index): sdf_file for sdf_file in paths}
+        #
+        #     for future in as_completed(future_dict):
+        #         sdf = future_dict[future]
+        #         try:
+        #             future.result()
+        #         except Exception as e:
+        #             print((sdf, e))
+        #
+        # took = time.time() - start
+        # print(f"Processed {len(paths)} sdf files, took {took} s.")
 
-            for future in as_completed(future_dict):
-                sdf = future_dict[future]
-                try:
-                    future.result()
-                except Exception as e:
-                    print((sdf, e))
-
-        took = time.time() - start
-        print(f"Processed {len(paths)} sdf files, took {took} s.")
-        num_scenes += 1
+    class_weight = np.array(class_weight).mean(axis=0)
+    mask = class_weight > 0
+    class_weight[mask] = 1 / class_weight[mask]
+    class_weight /= class_weight.sum()
+    np.savez("class_weight", class_weight=class_weight.astype(float))
 
     print("Done.")
