@@ -53,7 +53,7 @@ parser.add_argument('--save_epoch', type=int, default=1, help='save every nth ep
 parser.add_argument('--lr', type=float, default=0.0001, help='learning rate, default=0.0001')
 parser.add_argument('--d_lr_factor', type=float, default=4, help='lr disc = d_lr_factor*lr')
 parser.add_argument('--weight_decay', type=float, default=0.0, help='weight decay.')
-parser.add_argument('--num_iters_geo_only', type=int, default=600, help='#iters to train geo before introducing color')
+parser.add_argument('--num_iters_geo_only', type=int, default=1000, help='#iters to train geo before introducing color')
 parser.add_argument('--num_iters_before_content', type=int, default=60000,
                     help='#iters to train geo before introducing color')
 parser.add_argument('--weight_occ_loss', type=float, default=1.0, help='weight geo loss vs rest (0 to disable).')
@@ -89,8 +89,8 @@ parser.add_argument('--subsample_tgt2d_factor', type=int, default=1, help='heigh
 parser.add_argument('--max_depth_fill_iters', type=int, default=40,
                     help='max #fill iters for depth filling (0 for no fill)')
 # adversarial part
-parser.add_argument('--weight_disc_loss', type=float, default=0.0, help='weight disc loss.')
-parser.add_argument('--weight_discgen_loss', type=float, default=0.000, help='weight disc loss.')
+parser.add_argument('--weight_disc_loss', type=float, default=0.5, help='weight disc loss.')
+parser.add_argument('--weight_discgen_loss', type=float, default=0.005, help='weight disc loss.')
 parser.add_argument('--nf_disc', type=int, default=8, help='controls #channels of discriminator')
 parser.add_argument('--nf_gen', type=int, default=20, help='controls #channels of generator')
 parser.add_argument('--no_project_targets', dest='project_targets', action='store_false')

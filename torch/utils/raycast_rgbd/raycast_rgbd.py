@@ -27,8 +27,8 @@ class RayCastRGBDFunction(Function):
                                   vals_normals, vals_semantic, view_matrix_inv, image_color, image_depth, image_normal,
                                   image_semantic, mapping3dto2d, mapping3dto2d_num, intrinsic_params, opts)
         variables = [sparse_mapping, mapping3dto2d, mapping3dto2d_num,
-                     torch.IntTensor([batch_size, dims3d[2], dims3d[1], dims3d[0], locs.shape[0]]), d_color, d_depth,
-                     d_normal, d_semantic]
+                     torch.IntTensor([batch_size, dims3d[2], dims3d[1], dims3d[0], locs.shape[0]]),
+                     d_color, d_depth, d_normal, d_semantic]
         ctx.save_for_backward(*variables)
 
         return image_color, image_depth, image_normal, image_semantic
@@ -39,8 +39,9 @@ class RayCastRGBDFunction(Function):
         raycast_rgbd_cuda.backward(
             grad_color.contiguous(), grad_depth.contiguous(), grad_normal.contiguous(), grad_semantic.contiguous(),
             sparse_mapping, mapping3dto2d, mapping3dto2d_num, dims, d_color, d_depth, d_normal, d_semantic)
-        return None, d_depth[:dims[4]], d_color[:dims[4]], d_normal[:dims[4]], d_semantic[:dims[
-            4]], None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None
+        return None, d_depth[:dims[4]], d_color[:dims[4]], d_normal[:dims[4]], d_semantic[:dims[4]], None, None, None, \
+               None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None
+
 
 class RaycastRGBD(nn.Module):
     def __init__(self, batch_size, dims3d, width, height, depth_min, depth_max, thresh_sample_dist, ray_increment,
