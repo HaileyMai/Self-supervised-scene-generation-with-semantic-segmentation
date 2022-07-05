@@ -162,13 +162,6 @@ if __name__ == "__main__":
                         help="output directory of the region segmentation download")
     parser.add_argument("--mapping", type=str, required=True,
                         help="table that contains the mapping of raw_categories to ids")
-    parser.add_argument("--category_list", type=str, required=True,
-                        help="table contains the mapping from index to name")
-    parser.add_argument("--category_name", type=str, default="mpcat40")
-    parser.add_argument("--category_taxonomy", type=str, default="mpcat40index",
-                        help="what taxonomy to use, should be a column of the mapping table")
-    parser.add_argument("--raw_category", type=str, default="raw_category",
-                        help="column of mapping that contains the raw category names")
     parser.add_argument("--sdf_path", type=str, required=True, help="directory of the .sdf files")
     parser.add_argument("--output_dir", type=str, default=".", help="where to write the extended .sdf files")
     parser.add_argument("--output_vis_dir", type=str, default=None, help="where to write the color and sem meshes")
@@ -179,6 +172,9 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
     print(args)
+
+    if not os.path.exists(args.output_dir):
+        os.mkdir(args.output_dir)
 
     mapping_table = pd.read_csv(args.mapping, sep="\t")[["count", "eigen13id", "eigen13class", "mpcat40index"]]
     raw_index = np.array(mapping_table["eigen13id"])
