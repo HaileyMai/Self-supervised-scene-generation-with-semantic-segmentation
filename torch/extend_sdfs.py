@@ -6,6 +6,8 @@ import os
 import glob
 
 import collections
+
+import matplotlib
 from plyfile import PlyData, PlyElement
 from os import path, listdir
 import json
@@ -64,7 +66,7 @@ def plot_colortable(colors, title, emptycols=0):
         swatch_start_x = cell_width * col
         text_pos_x = cell_width * col + swatch_width + 7
 
-        ax.text(text_pos_x, y, mapping_label[i], fontsize=14,
+        ax.text(text_pos_x, y, eigen13_label[i], fontsize=14,
                 horizontalalignment='left',
                 verticalalignment='center')
 
@@ -76,7 +78,7 @@ def plot_colortable(colors, title, emptycols=0):
     return fig
 
 
-def add_semantics_to_chunk_sdf(sdf_file_name, points, cat, mpcat40index, vis_path=None):
+def add_semantics_to_chunk_sdf(sdf_file_name, points, cat, index, vis_path=None):
     sdf, world2grid, known, colors, _ = data_util.load_sdf(
         sdf_file_name, load_sparse=False, load_known=True, load_color=True)
     dimz, dimy, dimx = sdf.shape[0], sdf.shape[1], sdf.shape[2]
@@ -95,20 +97,20 @@ def add_semantics_to_chunk_sdf(sdf_file_name, points, cat, mpcat40index, vis_pat
         upper_bound = np.all(x_ < [dimx, dimy, dimz], axis=1)
         inbounds = np.logical_and(lower_bound, upper_bound)
         if concatenate is None:
-            points_ = np.column_stack((x_, mpcat40index[cat]))
+            points_ = np.column_stack((x_, index[cat]))
         else:
-            points_ = np.column_stack((x_, np.repeat(mpcat40index[cat], concatenate)))
+            points_ = np.column_stack((x_, np.repeat(index[cat], concatenate)))
         points_ = points_[inbounds].astype(int)  # keep only values that are in the given grid
         return points_
 
     points = (cube[None, :, :] + x_floor[:, None, :]).reshape(-1, 3)
     points = find_valid_points(points, 8)  # denser: box around points
-    points = points[points[:, 3] < 41]
+    points = points[points[:, 3] < 14]
     _, unique = np.unique(points[:, :3], axis=0, return_index=True)
     points = points[unique]
     points_round = find_valid_points(x_round)  # most accurate points
 
-    dense_semantics = 41 * np.ones([dimz, dimy, dimx], dtype=np.uint8)
+    dense_semantics = 14 * np.ones([dimz, dimy, dimx], dtype=np.uint8)
     dense_semantics[points[:, 2], points[:, 1], points[:, 0]] = points[:, 3]
     dense_semantics[points_round[:, 2], points_round[:, 1], points_round[:, 0]] = points_round[:, 3]
 
@@ -120,16 +122,16 @@ def add_semantics_to_chunk_sdf(sdf_file_name, points, cat, mpcat40index, vis_pat
         dense_sem_color = dense_sem_color.astype(np.uint8)
         dense_sem_color = torch.from_numpy(dense_sem_color).byte()
         [sp1, _, sp3] = os.path.splitext(os.path.basename(sdf_file_name))[0].split('__')
-        mc.marching_cubes(torch.from_numpy(target_for_sdf[0, 0]), dense_sem_color, isovalue=0, truncation=2.9,
+        mc.marching_cubes(torch.from_numpy(target_for_sdf[0, 0]), dense_sem_color, isovalue=0, truncation=3,
                           thresh=10, output_filename=os.path.join(vis_path, sp1 + '__sem__' + sp3 + '.ply'))
         target_for_colors = torch.from_numpy(target_for_colors).byte()
-        mc.marching_cubes(torch.from_numpy(target_for_sdf[0, 0]), target_for_colors[0], isovalue=0, truncation=2.9,
+        mc.marching_cubes(torch.from_numpy(target_for_sdf[0, 0]), target_for_colors[0], isovalue=0, truncation=3,
                           thresh=10, output_filename=os.path.join(vis_path, sp1 + '__color__' + sp3 + '.ply'))
     return dense_semantics
 
 
 def extend_sdf_file(segmentation, sdf_file, output_dir, output_vis_dir, region_sampled_points, region_sampled_cat,
-                    mpcat40index):
+                    index):
     # print(f"Now extending {sdf_file}.")
     room, _, sdf_number = os.path.splitext(os.path.basename(sdf_file))[0].split('__')
     region = room.split('room')[-1]
@@ -143,7 +145,7 @@ def extend_sdf_file(segmentation, sdf_file, output_dir, output_vis_dir, region_s
     valid = np.logical_and(region_sampled_points >= limits[0] - 0.3, region_sampled_points <= limits[1] + 0.3)
     valid = np.all(valid, axis=1)
     dense_sem = add_semantics_to_chunk_sdf(sdf_file, region_sampled_points[valid], region_sampled_cat[valid],
-                                           mpcat40index, vis_path=output_vis_dir)
+                                           index, vis_path=output_vis_dir)
 
     out_path = path.join(output_dir, segmentation + "_room" + str(region) + "__sem__" + str(sdf_number) + ".sdf")
     with open(sdf_file, "rb") as i:
@@ -178,26 +180,32 @@ if __name__ == "__main__":
     args = parser.parse_args()
     print(args)
 
-    mapping_table = pd.read_csv(args.mapping, sep="\t")[["raw_category", "mpcat40index"]]
-    mpcat40_table = pd.read_csv(args.category_list, sep="\t")[["mpcat40", "mpcat40index"]]
-    mpcat40index = np.array(mapping_table["mpcat40index"].values)
-    mpcat40index = np.concatenate((np.array([0]), mpcat40index), axis=-1)
+    mapping_table = pd.read_csv(args.mapping, sep="\t")[["count", "eigen13id", "eigen13class", "mpcat40index"]]
+    raw_index = np.array(mapping_table["eigen13id"])
+    raw_index[mapping_table["mpcat40index"] == 41] = 14
+    raw_index = np.concatenate((np.array([0]), raw_index), axis=-1)
+    count = np.array(mapping_table[["count", "eigen13id"]].groupby("eigen13id").sum())
+    count[7] -= mapping_table["count"][mapping_table["mpcat40index"] == 41].sum()
+    weight = 1 / count
+    weight /= weight.sum()
 
-    # create a colortable for categories
-    np.random.seed(6)
-    mapping_label = mpcat40_table["mpcat40"].values
-    mapping_color = np.zeros((42, 3))
-    for i in range(42):
-        mapping_color[i] = np.random.choice(range(256), size=3)
-    mapping_color[-1] = np.array([0, 0, 0])  # unlabeled: black
+    _, unique = np.unique(mapping_table["eigen13id"], axis=0, return_index=True)
+    label = list(zip(mapping_table["eigen13id"][unique], mapping_table["eigen13class"][unique]))
+    label = sorted(label, key=lambda x: x[0])
+    eigen13_label = np.array(label)[:, 1]
+    eigen13_label[-1] = "unlabeled"
+
+    mapping_color = matplotlib.cm.tab20(range(20))[:15, :3] * 255
     mapping_color[0] = np.array([255, 255, 255])  # void: white
-
+    mapping_color[-1] = np.array([0, 0, 0])  # unlabeled as default: black
     color_list = tuple(map(tuple, mapping_color / 255))
     category_img = plot_colortable(color_list[:], "Category List")
     category_img.savefig("Category_list.png")
-    np.savez("category_color", mapping_color=mapping_color.astype(np.uint8))
+    np.savez("category", mapping_color=mapping_color.astype(np.uint8), weight=weight)
 
     seg_dir = path.join(args.seg_path, "v1", "scans")
+    if not os.path.exists(args.output_vis_dir):
+        os.makedirs(args.output_vis_dir)
 
     num_scenes = 0
     class_weight = []
@@ -222,7 +230,7 @@ if __name__ == "__main__":
         # sample points from all regions/rooms in the segmentation
         # can avoid inconsistency between .ply and .sdf files (region and chunk)
         ply_dir = path.join(unzip_path, segmentation, "region_segmentations")
-        region = 30
+        region = 0
         start = time.time()
         print(f"Sampling points ...")
         region_sampled_points, region_sampled_cat = None, None
@@ -243,22 +251,13 @@ if __name__ == "__main__":
         took = time.time() - start
         print(f"Processed {region} regions, sampled {region_sampled_points.shape[0]} points, took {took} s.")
 
-        # approximately calculate label frequency
-        label_freq = collections.Counter(mpcat40index[region_sampled_cat])
-        d = collections.Counter(label_freq)
-        w = np.zeros(42)
-        for idx, num in d.items():
-            w[idx] = num
-        w = w / w.sum()
-        class_weight.append(w)
-
         # add valid points to corresponding sdf file(s)
         paths = glob.glob(args.sdf_path + str(segmentation) + '*cmp*')
         start = time.time()
         with ThreadPoolExecutor(max_workers=4) as executor:
             future_dict = {
                 executor.submit(extend_sdf_file, segmentation, sdf_file, args.output_dir, args.output_vis_dir,
-                                region_sampled_points, region_sampled_cat, mpcat40index): sdf_file for sdf_file in paths}
+                                region_sampled_points, region_sampled_cat, raw_index): sdf_file for sdf_file in paths}
 
             for future in as_completed(future_dict):
                 sdf = future_dict[future]
@@ -270,11 +269,5 @@ if __name__ == "__main__":
         took = time.time() - start
         print(f"Processed {len(paths)} sdf files, took {took} s.")
         num_scenes += 1
-
-    class_weight = np.array(class_weight).mean(axis=0)
-    mask = class_weight > 0
-    class_weight[mask] = 1 / class_weight[mask]
-    class_weight /= class_weight.sum()
-    np.savez("class_weight", class_weight=class_weight.astype(float))
 
     print("Done.")

@@ -15,10 +15,9 @@
 
 
 namespace {
-struct float41
+struct float14
 {
-    float c0, c1, c2, c3, c4, c5, c6, c7, c8, c9, c10, c11, c12, c13, c14, c15, c16, c17, c18, c19, c20, c21, c22, c23,
-    c24, c25, c26, c27, c28, c29, c30, c31, c32, c33, c34, c35, c36, c37, c38, c39, c40;
+    float c0, c1, c2, c3, c4, c5, c6, c7, c8, c9, c10, c11, c12, c13;
 };
 
 struct SdfData
@@ -86,7 +85,7 @@ inline float3 kinectProjToCamera(float depthMin, float depthMax, float mx, float
 }
 
 __device__
-bool getVoxel(const SdfData sdf, int batch, const float3& pos, float& dist, float3& color, float3& normal, float41& semantic) {
+bool getVoxel(const SdfData sdf, int batch, const float3& pos, float& dist, float3& color, float3& normal, float14& semantic) {
 	int3 pi = make_int3(pos+make_float3(sign(pos))*0.5f);
 	if (pi.x >= 0 && pi.y >= 0 && pi.z >= 0 && pi.x < sdf.dimx && pi.y < sdf.dimy && pi.z < sdf.dimz) {
 		const int idx = sdf.sparse_mapping[batch*sdf.dimz*sdf.dimy*sdf.dimx + pi.z*sdf.dimy*sdf.dimx + pi.y*sdf.dimx + pi.x];
@@ -112,46 +111,19 @@ bool getVoxel(const SdfData sdf, int batch, const float3& pos, float& dist, floa
         semantic.c11 = sdf.vals_semantic[idx*41+11];
         semantic.c12 = sdf.vals_semantic[idx*41+12];
         semantic.c13 = sdf.vals_semantic[idx*41+13];
-        semantic.c14 = sdf.vals_semantic[idx*41+14];
-        semantic.c15 = sdf.vals_semantic[idx*41+15];
-        semantic.c16 = sdf.vals_semantic[idx*41+16];
-        semantic.c17 = sdf.vals_semantic[idx*41+17];
-        semantic.c18 = sdf.vals_semantic[idx*41+18];
-        semantic.c19 = sdf.vals_semantic[idx*41+19];
-        semantic.c20 = sdf.vals_semantic[idx*41+20];
-        semantic.c21 = sdf.vals_semantic[idx*41+21];
-        semantic.c22 = sdf.vals_semantic[idx*41+22];
-        semantic.c23 = sdf.vals_semantic[idx*41+23];
-        semantic.c24 = sdf.vals_semantic[idx*41+24];
-        semantic.c25 = sdf.vals_semantic[idx*41+25];
-        semantic.c26 = sdf.vals_semantic[idx*41+26];
-        semantic.c27 = sdf.vals_semantic[idx*41+27];
-        semantic.c28 = sdf.vals_semantic[idx*41+28];
-        semantic.c29 = sdf.vals_semantic[idx*41+29];
-        semantic.c30 = sdf.vals_semantic[idx*41+30];
-        semantic.c31 = sdf.vals_semantic[idx*41+31];
-        semantic.c32 = sdf.vals_semantic[idx*41+32];
-        semantic.c33 = sdf.vals_semantic[idx*41+33];
-        semantic.c34 = sdf.vals_semantic[idx*41+34];
-        semantic.c35 = sdf.vals_semantic[idx*41+35];
-        semantic.c36 = sdf.vals_semantic[idx*41+36];
-        semantic.c37 = sdf.vals_semantic[idx*41+37];
-        semantic.c38 = sdf.vals_semantic[idx*41+38];
-        semantic.c39 = sdf.vals_semantic[idx*41+39];
-        semantic.c40 = sdf.vals_semantic[idx*41+40];
 		return true;
 	}
 	return false;
 }
 
 __device__
-bool trilinearInterpolationSimpleFastFast(const SdfData sdf, int batch, const float3& pos, float& dist, float3& color, float3& normal, float41& semantic) {
+bool trilinearInterpolationSimpleFastFast(const SdfData sdf, int batch, const float3& pos, float& dist, float3& color, float3& normal, float14& semantic) {
 	const float oSet = 1.0f; // voxel size -> 1
 	const float3 posDual = pos-make_float3(oSet/2.0f, oSet/2.0f, oSet/2.0f);
 	float3 weight = fracf(pos); // worldtovoxel -> identity
 
 	dist = 0.0f;
-	float vsdf; float41 vsemantic; float3 vcolor; float3 vnormal;
+	float vsdf; float14 vsemantic; float3 vcolor; float3 vnormal;
 	color = make_float3(0.0f, 0.0f, 0.0f);
 	normal = make_float3(0.0f, 0.0f, 0.0f);
 	getVoxel(sdf, batch, pos, vsdf, color, normal, semantic);
@@ -191,7 +163,7 @@ float findIntersectionLinear(float tNear, float tFar, float dNear, float dFar)
 
 // d0 near, d1 far
 __device__
-	bool findIntersectionBisection(const SdfData sdf, int batch, const float3& worldCamPos, const float3& worldDir, float d0, float r0, float d1, float r1, float& alpha, float3& color, float3& normal, float41& semantic)
+	bool findIntersectionBisection(const SdfData sdf, int batch, const float3& worldCamPos, const float3& worldDir, float d0, float r0, float d1, float r1, float& alpha, float3& color, float3& normal, float14& semantic)
 {
 	float a = r0; float aDist = d0;
 	float b = r1; float bDist = d1;
@@ -227,12 +199,12 @@ void traverseCoarseGridSimpleSampleAll(const SdfData sdf, int batch, RayCastData
 #pragma unroll 1
 	while(rayCurrent < rayEnd) {
 		float3 currentPosWorld = worldCamPos+rayCurrent*worldDir;
-		float dist; float41 semantic; float3 color; float3 normal;
+		float dist; float14 semantic; float3 color; float3 normal;
 		if(trilinearInterpolationSimpleFastFast(sdf, batch, currentPosWorld, dist, color, normal, semantic))
 		{
 			if(lastSample.weight > 0 && ((lastSample.sdf > 0.0f && dist < 0.0f) || (lastSample.sdf < 0.0f && dist > 0.0f))) // current sample is always valid here
 			{
-				float alpha; float41 semantic2; float3 color2; float3 normal2;
+				float alpha; float14 semantic2; float3 color2; float3 normal2;
 				bool b = findIntersectionBisection(sdf, batch, worldCamPos, worldDir, lastSample.sdf, lastSample.alpha, dist, rayCurrent, alpha, color2, normal2, semantic2);
 
 				float3 currentIso = worldCamPos+alpha*worldDir;
@@ -265,34 +237,6 @@ void traverseCoarseGridSimpleSampleAll(const SdfData sdf, int batch, RayCastData
 						raycastData.image_semantic[(dTid.z*params.width*params.height + dTid.y*params.width+dTid.x)*41 + 11] = semantic2.c11;
 						raycastData.image_semantic[(dTid.z*params.width*params.height + dTid.y*params.width+dTid.x)*41 + 12] = semantic2.c12;
 						raycastData.image_semantic[(dTid.z*params.width*params.height + dTid.y*params.width+dTid.x)*41 + 13] = semantic2.c13;
-						raycastData.image_semantic[(dTid.z*params.width*params.height + dTid.y*params.width+dTid.x)*41 + 14] = semantic2.c14;
-						raycastData.image_semantic[(dTid.z*params.width*params.height + dTid.y*params.width+dTid.x)*41 + 15] = semantic2.c15;
-						raycastData.image_semantic[(dTid.z*params.width*params.height + dTid.y*params.width+dTid.x)*41 + 16] = semantic2.c16;
-						raycastData.image_semantic[(dTid.z*params.width*params.height + dTid.y*params.width+dTid.x)*41 + 17] = semantic2.c17;
-						raycastData.image_semantic[(dTid.z*params.width*params.height + dTid.y*params.width+dTid.x)*41 + 18] = semantic2.c18;
-						raycastData.image_semantic[(dTid.z*params.width*params.height + dTid.y*params.width+dTid.x)*41 + 19] = semantic2.c19;
-						raycastData.image_semantic[(dTid.z*params.width*params.height + dTid.y*params.width+dTid.x)*41 + 20] = semantic2.c20;
-						raycastData.image_semantic[(dTid.z*params.width*params.height + dTid.y*params.width+dTid.x)*41 + 21] = semantic2.c21;
-                        raycastData.image_semantic[(dTid.z*params.width*params.height + dTid.y*params.width+dTid.x)*41 + 22] = semantic2.c22;
-                        raycastData.image_semantic[(dTid.z*params.width*params.height + dTid.y*params.width+dTid.x)*41 + 23] = semantic2.c23;
-                        raycastData.image_semantic[(dTid.z*params.width*params.height + dTid.y*params.width+dTid.x)*41 + 24] = semantic2.c24;
-                        raycastData.image_semantic[(dTid.z*params.width*params.height + dTid.y*params.width+dTid.x)*41 + 25] = semantic2.c25;
-                        raycastData.image_semantic[(dTid.z*params.width*params.height + dTid.y*params.width+dTid.x)*41 + 26] = semantic2.c26;
-                        raycastData.image_semantic[(dTid.z*params.width*params.height + dTid.y*params.width+dTid.x)*41 + 27] = semantic2.c27;
-                        raycastData.image_semantic[(dTid.z*params.width*params.height + dTid.y*params.width+dTid.x)*41 + 28] = semantic2.c28;
-                        raycastData.image_semantic[(dTid.z*params.width*params.height + dTid.y*params.width+dTid.x)*41 + 29] = semantic2.c29;
-                        raycastData.image_semantic[(dTid.z*params.width*params.height + dTid.y*params.width+dTid.x)*41 + 30] = semantic2.c30;
-                        raycastData.image_semantic[(dTid.z*params.width*params.height + dTid.y*params.width+dTid.x)*41 + 31] = semantic2.c31;
-                        raycastData.image_semantic[(dTid.z*params.width*params.height + dTid.y*params.width+dTid.x)*41 + 32] = semantic2.c32;
-                        raycastData.image_semantic[(dTid.z*params.width*params.height + dTid.y*params.width+dTid.x)*41 + 33] = semantic2.c33;
-                        raycastData.image_semantic[(dTid.z*params.width*params.height + dTid.y*params.width+dTid.x)*41 + 34] = semantic2.c34;
-                        raycastData.image_semantic[(dTid.z*params.width*params.height + dTid.y*params.width+dTid.x)*41 + 35] = semantic2.c35;
-                        raycastData.image_semantic[(dTid.z*params.width*params.height + dTid.y*params.width+dTid.x)*41 + 36] = semantic2.c36;
-                        raycastData.image_semantic[(dTid.z*params.width*params.height + dTid.y*params.width+dTid.x)*41 + 37] = semantic2.c37;
-                        raycastData.image_semantic[(dTid.z*params.width*params.height + dTid.y*params.width+dTid.x)*41 + 38] = semantic2.c38;
-                        raycastData.image_semantic[(dTid.z*params.width*params.height + dTid.y*params.width+dTid.x)*41 + 39] = semantic2.c39;
-                        raycastData.image_semantic[(dTid.z*params.width*params.height + dTid.y*params.width+dTid.x)*41 + 40] = semantic2.c40;
-
 
 						const int3 loc = make_int3(currentIso+make_float3(sign(currentIso))*0.5f);
 						const int idx = sdf.sparse_mapping[dTid.z*sdf.dimz*sdf.dimy*sdf.dimx + loc.z*sdf.dimy*sdf.dimx + loc.y*sdf.dimx + loc.x];
