@@ -201,7 +201,7 @@ if __name__ == "__main__":
     color_list = tuple(map(tuple, mapping_color / 255))
     category_img = plot_colortable(color_list[:], "Category List")
     category_img.savefig("Category_list.png")
-    np.savez("category", mapping_color=mapping_color.astype(np.uint8), weight=weight)
+    np.savez("category", mapping_color=mapping_color.astype(np.uint8), weight=weight.reshape(-1))
 
     seg_dir = path.join(args.seg_path, "v1", "scans")
     if not os.path.exists(args.output_vis_dir):

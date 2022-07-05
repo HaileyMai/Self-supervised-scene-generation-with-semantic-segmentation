@@ -1,6 +1,7 @@
 from __future__ import print_function
 
 import os, sys, struct
+import json
 import imageio
 import numpy as np
 import torch
@@ -39,8 +40,8 @@ def get_train_files_3d(data_path, file_list, val_file_list, max_num):
 
 def dump_args_txt(args, output_file):
     with open(output_file, 'w') as f:
-        f.write('%s\n' % str(args))
-
+        json.dump(args.__dict__, f, indent=2)
+        # f.write('%s\n' % str(args))
 
 # locs: zyx ordering
 def sparse_to_dense_np(locs, values, dimx, dimy, dimz, default_val):

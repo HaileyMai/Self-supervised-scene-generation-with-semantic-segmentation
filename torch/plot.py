@@ -3,6 +3,7 @@ import os
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+import json
 
 import argparse
 
@@ -13,12 +14,7 @@ parser.add_argument('--name', default='', help='name of the experiment')
 parser.add_argument('--output', default='./plot', help='folder to output')
 args = parser.parse_args()
 
-# TODO read from args.txt
-f = open(os.path.join(args.log_path, "args.txt"), "r")
-params = f.read()[10:-2].split("voxelsize=0.02, ")[1]
-values = [e.split('=')[1] for e in params.split(', ')]
-keys = [e.split('=')[0] for e in params.split(', ')]
-params = dict(zip(keys, values))
+params = json.load(open(os.path.join(args.log_path, "args.txt")))
 weight_depth_loss = float(params['weight_depth_loss'])
 # weight_disc_loss = float(params['weight_disc_loss'])
 # weight_discgen_loss = float(params['weight_discgen_loss'])
@@ -65,8 +61,6 @@ plt.plot(iteration, train_loss_occ * weight_occ_loss + train_loss_sdf * weight_s
          + train_loss_depth * weight_depth_loss + train_loss_color * weight_color_loss
          + train_loss_semantic * weight_semantic_loss, label='total')
 plt.plot(iteration, train_loss_occ * weight_occ_loss + train_loss_sdf * weight_sdf_loss, label='occ+sdf')
-# plt.plot(iteration, train_loss_occ * weight_occ_loss, label='occ')
-# plt.plot(iteration, train_loss_sdf * weight_sdf_loss, label='sdf')
 plt.plot(iteration, train_loss_depth * weight_depth_loss, label='depth2d')
 if weight_color_loss > 0:
     plt.plot(iteration, train_loss_color * weight_color_loss, label='color2d')
@@ -142,10 +136,10 @@ if args.val:
     # plt.plot(epoch, val_loss_total, '--x', label='val_total')
     plt.plot(epoch, train_loss_occ * weight_occ_loss + train_loss_sdf * weight_sdf_loss
              + train_loss_depth * weight_depth_loss + train_loss_color * weight_color_loss
-             + train_loss_semantic * weight_semantic_loss)
+             + train_loss_semantic * weight_semantic_loss, label='train_total')
     plt.plot(epoch, val_loss_occ * weight_occ_loss + val_loss_sdf * weight_sdf_loss
              + val_loss_depth * weight_depth_loss + val_loss_color * weight_color_loss
-             + val_loss_semantic * weight_semantic_loss, '--x')
+             + val_loss_semantic * weight_semantic_loss, '--x', label='val_total')
     # plt.plot(epoch, train_loss_occ * weight_occ_loss + train_loss_sdf * weight_sdf_loss, label='train_occ+sdf')
     # plt.plot(epoch, val_loss_occ * weight_occ_loss + val_loss_sdf * weight_sdf_loss, '--x', label='val_occ+sdf')
     plt.plot(train_loss_depth * weight_depth_loss, label='train_depth2d')
