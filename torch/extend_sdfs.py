@@ -209,6 +209,16 @@ if __name__ == "__main__":
         if args.max_scenes is not None and args.max_scenes <= num_scenes:
             print("Max number of scenes reached, done.")
             exit()
+        
+        if os.path.exists(os.path.join(args.output_dir, segmentation + "_room0__sem__0.sdf")):
+            print(f"{segmentation} already exists, skipping.")
+            continue
+        
+        #Check before parsing ply's to avoid unnecessary processing.
+        sdf_paths = glob.glob(os.path.join(args.sdf_path, str(segmentation) + '*cmp*'))
+        if len(sdf_paths) == 0:
+            print(f"Found no sdf files for {segmentation}, skipping.")
+            continue
 
         unzip_path = path.join(seg_dir, segmentation)
         print("=========================")
@@ -231,7 +241,7 @@ if __name__ == "__main__":
         print(f"Sampling points ...")
         region_sampled_points, region_sampled_cat = None, None
         while path.exists(path.join(ply_dir, "region" + str(region) + ".ply")):
-            print(f"-region {region}")
+            #print(f"-region {region}")
 
             ply_path = path.join(ply_dir, "region" + str(region) + ".ply")
             sampled_points, sampled_cat = sample_util.sample_from_region_ply(ply_path, num=args.samples_per_face)
@@ -248,12 +258,11 @@ if __name__ == "__main__":
         print(f"Processed {region} regions, sampled {region_sampled_points.shape[0]} points, took {took} s.")
 
         # add valid points to corresponding sdf file(s)
-        paths = glob.glob(args.sdf_path + str(segmentation) + '*cmp*')
         start = time.time()
         with ThreadPoolExecutor(max_workers=4) as executor:
             future_dict = {
                 executor.submit(extend_sdf_file, segmentation, sdf_file, args.output_dir, args.output_vis_dir,
-                                region_sampled_points, region_sampled_cat, raw_index): sdf_file for sdf_file in paths}
+                                region_sampled_points, region_sampled_cat, raw_index): sdf_file for sdf_file in sdf_paths}
 
             for future in as_completed(future_dict):
                 sdf = future_dict[future]
@@ -263,7 +272,8 @@ if __name__ == "__main__":
                     print((sdf, e))
 
         took = time.time() - start
-        print(f"Processed {len(paths)} sdf files, took {took} s.")
+    
+        print(f"Processed {len(sdf_paths)} sdf files, took {took} s.")
         num_scenes += 1
 
     print("Done.")

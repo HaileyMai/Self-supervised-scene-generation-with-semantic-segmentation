@@ -43,7 +43,15 @@ def sample_point_cloud(vertices_, faces_, cat_ids, n_points_per_face, add_center
 
 
 def sample_from_region_ply(ply_path_, num, force_total_n=False, with_semantics=True):
-    data = PlyData.read(ply_path_)
+    try:
+        data = PlyData.read(ply_path_)
+    except:
+        print(f"Failed to read ply file {ply_path_}.")
+        if with_semantics:
+            return [], []
+        else:
+            return []
+
     vertices = data.elements[0]
     faces = data.elements[1]
 
