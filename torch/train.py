@@ -115,7 +115,8 @@ _SPLITTER = ','
 print(args)
 pred_semantic_3d = False
 semantic_color = np.load("category.npz")['mapping_color']
-weight_semantic_class = torch.from_numpy(np.load("category.npz")['weight']).float().cuda()
+weight_semantic_class = torch.from_numpy(np.load("category.npz")['weight'].flatten()).float().cuda()
+
 
 # specify gpu
 os.environ['CUDA_VISIBLE_DEVICES'] = str(args.gpu)
