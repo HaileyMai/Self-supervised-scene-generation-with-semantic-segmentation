@@ -245,6 +245,10 @@ if __name__ == "__main__":
 
             ply_path = path.join(ply_dir, "region" + str(region) + ".ply")
             sampled_points, sampled_cat = sample_util.sample_from_region_ply(ply_path, num=args.samples_per_face)
+            if len(sampled_points) == 0:
+                region += 1
+                continue
+
             if region_sampled_points is None:
                 region_sampled_points = sampled_points
                 region_sampled_cat = sampled_cat
