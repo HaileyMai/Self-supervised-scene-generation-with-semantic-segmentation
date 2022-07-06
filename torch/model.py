@@ -275,7 +275,7 @@ class Generator(nn.Module):
                 nn.BatchNorm3d(self.nf),
             )
         nf1 = 2 * self.nf if not self.pass_geo_feats else 3 * self.nf
-        nf_factor = 4
+        nf_factor = 6
         self.color_1 = nn.Sequential(
             nn.Conv3d(nf1, nf_factor * self.nf, (kz[3], 4, 4), 2, 1, bias=self.use_bias),
             nn.LeakyReLU(0.2, True),

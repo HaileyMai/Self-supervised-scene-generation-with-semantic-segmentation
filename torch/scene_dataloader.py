@@ -101,11 +101,14 @@ class SceneDataset(torch.utils.data.Dataset):
         name = os.path.splitext(os.path.basename(inputsdf_file))[0]
 
         color_file = None if self.is_chunks else os.path.splitext(sdf_file)[0] + '.colors'
+        sem_file = os.path.splitext(sdf_file)[0] + '.semantics'
+        if not os.path.exists(sem_file) or self.is_chunks:
+            sem_file = None
         # load complete (with or without semantic) sdf as target, load_sparse = False
         sdf, world2grid, known, colors, semantic = data_util.load_sdf(sdf_file, load_sparse=self.load_tgt_sparse,
                                                                       load_known=self.load_known and self.is_chunks,
                                                                       load_color=True, load_semantic=self.load_semantic,
-                                                                      color_file=color_file)
+                                                                      color_file=color_file, sem_file=sem_file)
         if semantic is not None:
             semantic = torch.from_numpy(semantic[np.newaxis, :])
         if sdf is None:

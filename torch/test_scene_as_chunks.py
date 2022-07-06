@@ -36,9 +36,8 @@ parser.add_argument('--num_to_vis', type=int, default=10, help='max num to vis')
 parser.add_argument('--max_to_process', type=int, default=150, help='max num to process')
 parser.add_argument('--vis_only', dest='vis_only', action='store_true')
 parser.add_argument('--weight_color_loss', type=float, default=1.0, help='weight color loss vs rest (0 to disable).')
-parser.add_argument('--weight_semantic_loss', type=float, default=1.0,
+parser.add_argument('--weight_semantic_loss', type=float, default=0.1,
                     help='weight semantic loss vs rest (0 to disable).')
-parser.add_argument('--weight_semantic_class', type=float, default=None)  # TODO
 parser.add_argument('--color_thresh', type=float, default=15.0, help='mask colors with all values < color_thresh')
 parser.add_argument('--color_truncation', type=float, default=0, help='truncation in voxels for color')
 parser.add_argument('--augment_rgb_scaling', dest='augment_rgb_scaling', action='store_true')
@@ -67,6 +66,32 @@ checkpoint = torch.load(args.model_path)
 model.load_state_dict(checkpoint['state_dict'])
 print('loaded model:', args.model_path)
 
+class_name = np.load("category.npz")['class_name']
+mapping_color = np.load("category.npz")['mapping_color']
+
+
+def compute_intersection_union(chunk_target_sdf, output_sdf, known, chunk_target_semantic=None,
+                               output_semantic=None, class_index=None):
+    inside_target = torch.zeros(chunk_target_sdf.shape, dtype=torch.bool)
+    inside_target[torch.abs(chunk_target_sdf) < args.truncation] = True
+
+    inside_output = torch.zeros(output_sdf.shape, dtype=torch.bool)
+    inside_output[torch.abs(output_sdf) < args.truncation] = True
+
+    if chunk_target_semantic is not None and output_semantic is not None and class_index is not None:
+        assert chunk_target_semantic.shape == output_semantic.shape
+        mask = torch.logical_and(chunk_target_semantic != 14, known)  # ignore unlabeled or unknown voxels
+        inside_target[chunk_target_semantic != class_index] = False
+        inside_output[output_semantic != class_index] = False
+    else:
+        mask = known
+
+    union = torch.logical_or(inside_target[mask], inside_output[mask])
+    intersection = torch.logical_and(inside_target[mask], inside_output[mask])
+    union = torch.sum(union)
+    intersection = torch.sum(intersection)
+    return intersection.item(), union.item()
+
 
 def test(dataloader, output_vis, num_to_vis):
     model.eval()
@@ -81,12 +106,16 @@ def test(dataloader, output_vis, num_to_vis):
     num_vis = 0
     num_batches = len(dataloader)
     with torch.no_grad():
-        iou_total = 0
+        intersection_total = 0
+        union_total = 0
+        intersection_classes_total = np.zeros(model.n_classes)
+        union_classes_total = np.zeros(model.n_classes)
         sample_total = 0
         for t, sample in enumerate(dataloader):
             inputs = sample['input']
             sdfs = sample['sdf']
             mask = sample['mask']
+            known = sample['known']
             colors = sample['colors']
             semantics = sample['semantics']
 
@@ -98,10 +127,12 @@ def test(dataloader, output_vis, num_to_vis):
                     mask = mask[:, :, :args.max_input_height]
                 if sdfs is not None:
                     sdfs = sdfs[:, :, :args.max_input_height]
+                if known is not None:
+                    known = known[:, :, :args.max_input_height]
                 if colors is not None:
                     colors = colors[:, :args.max_input_height]
                 if semantics is not None:
-                    semantics = semantics[:, :args.max_input_height]
+                    semantics = semantics[:, :, :args.max_input_height]
             sys.stdout.write('\r[ %d | %d ] %s (%d, %d, %d)    ' % (
                 num_proc, args.max_to_process, sample['name'], max_input_dim[0], max_input_dim[1], max_input_dim[2]))
 
@@ -109,17 +140,21 @@ def test(dataloader, output_vis, num_to_vis):
             output_sdfs = torch.zeros(sdfs.shape)
             output_norms = torch.zeros(sdfs.shape)
             output_occs = torch.zeros(sdfs.shape, dtype=torch.uint8)
-            output_semantics = (torch.zeros((sdfs.shape[:1] + (41,) + sdfs.shape[2:])))  # unlabeled class
+            output_semantics = (torch.zeros((sdfs.shape[:1] + (14,) + sdfs.shape[2:])))  # unlabeled class
 
             # chunk up the scene
             chunk_input = torch.ones(1, args.input_nf, chunk_dim[0], chunk_dim[1], chunk_dim[2]).cuda()
             chunk_mask = torch.ones(1, 1, chunk_dim[0], chunk_dim[1], chunk_dim[2]).cuda()
+            chunk_known = torch.ones(1, 1, chunk_dim[0], chunk_dim[1], chunk_dim[2]).cuda()
             chunk_target_sdf = torch.ones(1, 1, chunk_dim[0], chunk_dim[1], chunk_dim[2]).cuda()
             chunk_target_colors = torch.zeros(1, chunk_dim[0], chunk_dim[1], chunk_dim[2], 3, dtype=torch.uint8).cuda()
-            chunk_target_semantic = 41 * torch.ones(1, 1, chunk_dim[0], chunk_dim[1], chunk_dim[2], dtype=torch.uint8).cuda()
+            chunk_target_semantic = 14 * torch.ones(1, 1, chunk_dim[0], chunk_dim[1], chunk_dim[2],
+                                                    dtype=torch.uint8).cuda()
 
-            iou_sum = 0
-            chunks = 0
+            intersection_sum = 0
+            union_sum = 0
+            intersection_classes_sum = np.zeros(model.n_classes)
+            union_classes_sum = np.zeros(model.n_classes)
             for y in range(0, max_input_dim[1], args.stride):
                 for x in range(0, max_input_dim[2], args.stride):
                     chunk_input_mask = torch.abs(
@@ -139,35 +174,28 @@ def test(dataloader, output_vis, num_to_vis):
                     chunk_mask.fill_(0)
                     chunk_input[:, :, :fill_dim[0], :fill_dim[1], :fill_dim[2]] = inputs[:, :, :chunk_dim[0], y:y + chunk_dim[1], x:x + chunk_dim[2]]
                     chunk_mask[:, :, :fill_dim[0], :fill_dim[1], :fill_dim[2]] = mask[:, :, :chunk_dim[0], y:y + chunk_dim[1], x:x + chunk_dim[2]]
+                    chunk_known[:, :, :fill_dim[0], :fill_dim[1], :fill_dim[2]] = known[:, :, :chunk_dim[0], y:y + chunk_dim[1], x:x + chunk_dim[2]]
+                    chunk_known = chunk_known <= 1
                     chunk_target_sdf[:, :, :fill_dim[0], :fill_dim[1], :fill_dim[2]] = sdfs[:, :, :chunk_dim[0], y:y + chunk_dim[1], x:x + chunk_dim[2]]
                     chunk_target_colors[:, :fill_dim[0], :fill_dim[1], :fill_dim[2], :] = colors[:, :chunk_dim[0], y:y + chunk_dim[1], x:x + chunk_dim[2]]
                     if semantics is not None:
-                        chunk_target_semantic[:, :fill_dim[0], :fill_dim[1], :fill_dim[2], :] = semantics[:, :chunk_dim[0], y:y + chunk_dim[1], x:x + chunk_dim[2]]
-
-                    target_for_sdf, target_for_colors = loss_util.compute_targets(chunk_target_sdf.cuda(),
-                                                                                  args.truncation, False, None,
-                                                                                  chunk_target_colors.cuda())
-                    target_for_semantics = None  # TODO
+                        chunk_target_semantic[:, :, :fill_dim[0], :fill_dim[1], :fill_dim[2]] = semantics[:, :, :chunk_dim[0], y:y + chunk_dim[1], x:x + chunk_dim[2]]
 
                     output_occ = None
                     output_occ, output_sdf, output_color, output_semantic = model(
                         chunk_input, chunk_mask, pred_sdf=[True, True], pred_color=args.weight_color_loss > 0,
                         pred_semantic=args.weight_semantic_loss > 0)
 
-                    inside_target = torch.zeros(chunk_target_sdf.shape, dtype=torch.bool)
-                    inside_target[chunk_target_sdf > 0] = True
-
-                    inside_output = torch.zeros(output_sdf.shape, dtype=torch.bool)
-                    inside_output[output_sdf > 0] = True
-
-                    union = torch.logical_or(inside_target, inside_output)
-                    intersection = torch.logical_and(inside_target, inside_output)
-
-                    union = torch.sum(union)
-                    intersection = torch.sum(intersection)
-                    iou = intersection.item() / union.item()
-                    iou_sum += iou
-                    chunks += 1
+                    if semantics is not None:
+                        output_label = torch.argmax(output_semantic, dim=1, keepdim=True)
+                        for cl in range(model.n_classes):
+                            i, u = compute_intersection_union(chunk_target_sdf, output_sdf, chunk_known,
+                                                              chunk_target_semantic, output_label, class_index=cl)
+                            intersection_classes_sum[cl] += i
+                            union_classes_sum[cl] += u
+                    i, u = compute_intersection_union(chunk_target_sdf, output_sdf, chunk_known)
+                    intersection_sum += i
+                    union_sum += u
 
                     if output_occ is not None:
                         occ = torch.nn.Sigmoid()(output_occ.detach()) > 0.5
@@ -217,12 +245,21 @@ def test(dataloader, output_vis, num_to_vis):
                         output_occs[:, :, :chunk_dim[0], y:y + chunk_dim[1], x:x + chunk_dim[2]] = occ[:, :, :fill_dim[0], :fill_dim[1], :fill_dim[2]]
                     if output_semantic is not None:
                         output_semantic = output_semantic[outmask]
-                        output_semantics[0, :, output_locs[:, 0], output_locs[:, 1], output_locs[:, 2]] += output_semantic.permute(1, 0).detach().cpu()
+                        output_semantics[0, :, output_locs[:, 0], output_locs[:, 1],
+                        output_locs[:, 2]] += output_semantic.permute(1, 0).detach().cpu()
                     output_sdfs[0, 0, output_locs[:, 0], output_locs[:, 1], output_locs[:, 2]] += output_sdf[1][:, 0].detach().cpu()
                     output_norms[0, 0, output_locs[:, 0], output_locs[:, 1], output_locs[:, 2]] += 1
-            
-            print(f"Mean IoU: {iou_sum / chunks}")
-            iou_total += iou_sum / chunks
+
+            if semantics is not None:
+                iou_classes = intersection_classes_sum / union_classes_sum
+                print(f"\nMean IoU of {model.n_classes} classes: ")
+                for i in range(model.n_classes):
+                    print(f"{class_name[i]}: {iou_classes[i]:.3f}")
+                intersection_classes_total += intersection_classes_sum
+                union_classes_total += union_classes_sum
+            print(f"**Mean IoU: {intersection_sum / union_sum:.3f}")
+            intersection_total += intersection_sum
+            union_total += union_sum
             sample_total += 1
 
             # normalize
@@ -253,16 +290,32 @@ def test(dataloader, output_vis, num_to_vis):
                     vis_pred_semantic[0] = vals_sem.permute(1, 0).cpu().numpy()
                 if output_occs is not None:
                     pred_occ = output_occs.cpu().numpy().astype(np.float32)
-                data_util.save_predictions(output_vis, np.arange(1), sample['name'], inputs,
-                                           sdfs.cpu().numpy(), colors.cpu().numpy(), target_for_semantics, None, None,
-                                           None, vis_pred_sdf, vis_pred_color, vis_pred_semantic, None, None, None,
-                                           sample['world2grid'], args.truncation,
-                                           np.load("category_color.npz")['mapping_color'], args.color_space)
+                if semantics is not None:
+                    semantics = semantics.numpy()
+                data_util.save_predictions(output_vis, np.arange(1), sample['name'], inputs, sdfs.numpy(),
+                                           colors.numpy(), semantics, None, None, None, vis_pred_sdf, vis_pred_color,
+                                           vis_pred_semantic, None, None, None, sample['world2grid'], args.truncation,
+                                           mapping_color, args.color_space)
                 num_vis += 1
             num_proc += 1
             gc.collect()
 
-        print(f"Mean IoU total: {iou_total / sample_total}")
+        print("\n=========== Summary =============")
+        print(f"Evaluate {sample_total} regions: ")
+        if semantics is not None:
+            iou_classes = intersection_classes_total / union_classes_total
+            print(f"Mean IoU of {model.n_classes} classes: ")
+            for i in range(model.n_classes):
+                print(f"{class_name[i]}: {iou_classes[i]:.3f}")
+        print(f"**Mean IoU total: {intersection_total / union_total:.3f}")
+
+        with open(os.path.join(args.output, "IoU.txt"), "w") as f:  # TODO two columns
+            if semantics is not None:
+                np.savetxt(f, class_name, '%s', delimiter=' ')
+                np.savetxt(f, iou_classes, '%.3f', delimiter=' ')
+            f.write("\nTotal:\n")
+            f.write(str(intersection_total / union_total))
+
     sys.stdout.write('\n')
 
 
@@ -280,16 +333,18 @@ def main():
                                                  args.augment_rgb_scaling,
                                                  (args.augment_scale_min, args.augment_scale_max),
                                                  args.color_truncation, args.color_space,
-                                                 target_path=args.target_data_path)
-    test_dataloader = torch.utils.data.DataLoader(test_dataset, batch_size=1, shuffle=False, num_workers=2,
+                                                 target_path=args.target_data_path,
+                                                 load_semantic=args.weight_semantic_loss > 0)
+    print('test_dataset', len(test_dataset))
+    test_dataloader = torch.utils.data.DataLoader(test_dataset, batch_size=1, shuffle=False, num_workers=0,
                                                   collate_fn=scene_dataloader.collate_voxels)
 
     if os.path.exists(args.output):
         if args.vis_only:
             print('warning: output dir %s exists, will overwrite any existing files')
         # else:
-            # input('warning: output dir %s exists, press key to overwrite and continue' % args.output)
-            # shutil.rmtree(args.output)
+        # input('warning: output dir %s exists, press key to overwrite and continue' % args.output)
+        # shutil.rmtree(args.output)
     if not os.path.exists(args.output):
         os.makedirs(args.output)
     output_vis_path = os.path.join(args.output, 'vis')

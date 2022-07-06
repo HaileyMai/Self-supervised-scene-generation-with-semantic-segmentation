@@ -50,16 +50,16 @@ parser.add_argument('--batch_size', type=int, default=2, help='input batch size'
 parser.add_argument('--start_epoch', type=int, default=0, help='start epoch')
 parser.add_argument('--max_epoch', type=int, default=15, help='number of epochs to train for')
 parser.add_argument('--save_epoch', type=int, default=1, help='save every nth epoch')
-parser.add_argument('--lr', type=float, default=0.0001, help='learning rate, default=0.0001')
+parser.add_argument('--lr', type=float, default=0.0005, help='learning rate, default=0.0001')
 parser.add_argument('--d_lr_factor', type=float, default=4, help='lr disc = d_lr_factor*lr')
 parser.add_argument('--weight_decay', type=float, default=0.0, help='weight decay.')
-parser.add_argument('--num_iters_geo_only', type=int, default=1000, help='#iters to train geo before introducing color')
+parser.add_argument('--num_iters_geo_only', type=int, default=500, help='#iters to train geo before introducing color')
 parser.add_argument('--num_iters_before_content', type=int, default=60000,
                     help='#iters to train geo before introducing color')
 parser.add_argument('--weight_occ_loss', type=float, default=1.0, help='weight geo loss vs rest (0 to disable).')
 parser.add_argument('--weight_depth_loss', type=float, default=1.0, help='weight geo loss vs rest (0 to disable).')
 parser.add_argument('--weight_sdf_loss', type=float, default=0.1, help='weight geo loss vs rest (0 to disable).')
-parser.add_argument('--weight_color_loss', type=float, default=1.0, help='weight color loss vs rest (0 to disable).')
+parser.add_argument('--weight_color_loss', type=float, default=0.0, help='weight color loss vs rest (0 to disable).')
 parser.add_argument('--weight_semantic_loss', type=float, default=0.1,
                     help='weight semantic loss vs rest (0 to disable).')
 parser.add_argument('--color_thresh', type=int, default=15, help='mask colors with all values < color_thresh')
@@ -78,7 +78,7 @@ parser.add_argument('--weight_surf_geo', type=float, default=1.0, help='per-voxe
 parser.add_argument('--no_pass_geo_feats', dest='pass_geo_feats', action='store_false')
 # 2d proj part
 parser.add_argument('--weight_style_loss', type=float, default=0.0, help='weight style loss vs rest (0 to disable).')
-parser.add_argument('--weight_content_loss', type=float, default=0.1,
+parser.add_argument('--weight_content_loss', type=float, default=0.0,
                     help='weight content loss vs rest (0 to disable).')
 parser.add_argument('--frame_info_path', type=str, default='', help='path to frame info files')
 parser.add_argument('--frame_path', type=str, default='', help='path to frame files')
@@ -89,8 +89,8 @@ parser.add_argument('--subsample_tgt2d_factor', type=int, default=1, help='heigh
 parser.add_argument('--max_depth_fill_iters', type=int, default=40,
                     help='max #fill iters for depth filling (0 for no fill)')
 # adversarial part
-parser.add_argument('--weight_disc_loss', type=float, default=1.0, help='weight disc loss.')
-parser.add_argument('--weight_discgen_loss', type=float, default=0.005, help='weight disc loss.')
+parser.add_argument('--weight_disc_loss', type=float, default=0.0, help='weight disc loss.')
+parser.add_argument('--weight_discgen_loss', type=float, default=0.000, help='weight disc loss.')
 parser.add_argument('--nf_disc', type=int, default=8, help='controls #channels of discriminator')
 parser.add_argument('--nf_gen', type=int, default=20, help='controls #channels of generator')
 parser.add_argument('--no_project_targets', dest='project_targets', action='store_false')
@@ -113,7 +113,7 @@ UP_AXIS = 0
 _SPLITTER = ','
 
 print(args)
-pred_semantic_3d = False
+pred_semantic_3d = True
 semantic_color = np.load("category.npz")['mapping_color']
 weight_semantic_class = torch.from_numpy(np.load("category.npz")['weight'].flatten()).float().cuda()
 

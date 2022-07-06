@@ -326,7 +326,7 @@ def test(dataloader, output_vis, num_to_vis):
                                                target_for_semantics, None, vis_tgt_images_color,
                                                vis_target_images_semantic, vis_pred_sdf, vis_pred_color, vis_pred_semantic,
                                                None, vis_pred_images_color, vis_pred_images_semantic, sample['world2grid'],
-                                               args.truncation, np.load("category_color.npz")['mapping_color'],
+                                               args.truncation, np.load("category.npz")['mapping_color'],
                                                args.color_space, input_images=vis_input_images_color,
                                                pred_depth=vis_pred_depth, target_depth=vis_target_depth)
                 except:

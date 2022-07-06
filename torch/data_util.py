@@ -41,7 +41,7 @@ def get_train_files_3d(data_path, file_list, val_file_list, max_num):
 def dump_args_txt(args, output_file):
     with open(output_file, 'w') as f:
         json.dump(args.__dict__, f, indent=2)
-        # f.write('%s\n' % str(args))
+
 
 # locs: zyx ordering
 def sparse_to_dense_np(locs, values, dimx, dimy, dimz, default_val):
@@ -61,7 +61,8 @@ def dense_to_sparse_np(grid, thresh):
     return locs, values
 
 
-def load_sdf(file, load_sparse, load_known, load_color, is_sparse_file=True, color_file=None, load_semantic=False):
+def load_sdf(file, load_sparse, load_known, load_color, is_sparse_file=True, color_file=None, load_semantic=False,
+             sem_file=None):
     # assert os.path.isfile(file)
     assert (not load_sparse and not load_known) or (load_sparse != load_known)
     assert (not load_sparse and not load_semantic) or (load_sparse != load_semantic)
@@ -132,10 +133,21 @@ def load_sdf(file, load_sparse, load_known, load_color, is_sparse_file=True, col
 
     semantic = None
     if load_semantic:
-        num_semantic = struct.unpack('Q', fin.read(8))[0]
-        assert num_semantic == dimx * dimy * dimz
-        semantic = struct.unpack('B' * num_semantic, fin.read(num_semantic))
-        semantic = np.asarray(semantic, dtype=np.uint8).reshape([dimz, dimy, dimx])
+        if sem_file is not None:
+            with open(sem_file, 'rb') as sfin:
+                sdimx = struct.unpack('Q', sfin.read(8))[0]
+                sdimy = struct.unpack('Q', sfin.read(8))[0]
+                sdimz = struct.unpack('Q', sfin.read(8))[0]
+                assert sdimx == dimx and sdimy == dimy and sdimz == dimz
+                # if is_sparse_file:
+                #     pass  # TODO
+                semantic = struct.unpack('B' * sdimz * sdimy * sdimx, sfin.read(sdimz * sdimy * sdimx))
+                semantic = np.asarray(semantic, dtype=np.uint8).reshape([sdimz, sdimy, sdimx])
+        else:
+            num_semantic = struct.unpack('Q', fin.read(8))[0]
+            assert num_semantic == dimx * dimy * dimz
+            semantic = struct.unpack('B' * num_semantic, fin.read(num_semantic))
+            semantic = np.asarray(semantic, dtype=np.uint8).reshape([dimz, dimy, dimx])
         fin.close()
         sdf = sparse_to_dense_np(locs, sdf[:, np.newaxis], dimx, dimy, dimz, -float('inf'))
         return sdf, world2grid, known, color, semantic
@@ -679,7 +691,8 @@ def save_predictions(output_path, indices, names, inputs, target_for_sdf, target
                 colors = torch.from_numpy(colors)
                 colors = colors.byte()
             if output_semantic is not None and output_semantic[k] is not None:
-                semantics = np.argmax(sparse_to_dense_np(locs, output_semantic[k], dims[2], dims[1], dims[0], 0), axis=-1)
+                semantics = np.argmax(sparse_to_dense_np(locs, output_semantic[k], dims[2], dims[1], dims[0], 0),
+                                      axis=-1)
                 dense_sem_color = map_label_to_color(semantics[..., None], semantic_color).astype(np.uint8)
                 dense_sem_color = torch.from_numpy(dense_sem_color).byte()
                 mc.marching_cubes(torch.from_numpy(pred_sdf_dense), dense_sem_color, isovalue=isovalue,
