@@ -412,10 +412,12 @@ def train(epoch, iter, dataloader, log_file, output_save):
     train_losscontent = []
     model.train()
     start = time.time()
+    timings = []
 
     use_disc = args.weight_disc_loss > 0
     num_batches = len(dataloader)
     for t, sample in enumerate(dataloader):
+        t_start = time.time()
         sdfs = sample['sdf']
         if sdfs is None:
             torch.cuda.empty_cache()
@@ -457,8 +459,14 @@ def train(epoch, iter, dataloader, log_file, output_save):
             optimizer_disc.zero_grad()
         optimizer.zero_grad()
         mask = sample['mask'].cuda()
+
+        t_setup = time.time()
+
         output_occ, output_sdf, output_color, output_semantic = model(
             inputs, mask, pred_sdf=pred_sdf, pred_color=pred_color, pred_semantic=pred_semantic)
+        
+        t_forward = time.time()
+
         output_coarse_sdf = None
         if args.weight_depth_loss == 0:
             output_sdf = [[], []]
@@ -742,8 +750,13 @@ def train(epoch, iter, dataloader, log_file, output_save):
                                 dim=-1)
                 _, pred2d_label = torch.max(cat, dim=-1, keepdim=True)
                 pred2d_label = pred2d_label.to(torch.uint8)
+        
+        t_loss = time.time()
+        
         loss.backward()
         optimizer.step()
+
+        t_backward = time.time()
 
         if output_color is not None:
             output_color = (output_color[1] + 1) * 0.5
@@ -834,6 +847,22 @@ def train(epoch, iter, dataloader, log_file, output_save):
                                        sample['world2grid'].numpy(), args.truncation, semantic_color, args.color_space,
                                        input_images=vis_input_images_color, pred_depth=vis_pred_depth,
                                        target_depth=vis_target_depth, pred_occ=pred_occ)
+        t_output = time.time()
+
+        d_setup = t_setup - t_start
+        d_forward = t_forward - t_setup
+        d_loss = t_loss - t_forward
+        d_backward = t_backward - t_loss
+        d_output = t_output - t_backward
+
+        timings.append([d_setup, d_forward, d_loss, d_backward, d_output])
+
+        if iter % 100 == 0:
+            avg_setup, avg_forward, avg_loss, avg_backward, avg_output = np.average(timings, axis = 0)
+            print(f"Average timings: \n Setup: {avg_setup} \n Forward pass: {avg_forward} \n Loss calculation: {avg_loss} \n Backward pass: {avg_backward} \n Log and output: {avg_output}")
+            timings = []
+
+
 
     return train_losses, train_lossocc, train_iouocc, train_losssdf, train_lossdepth, train_losscolor, train_losssemantic, train_lossdisc, train_lossdisc_real, train_lossdisc_fake, train_lossgen, train_lossstyle, train_losscontent, iter
 
