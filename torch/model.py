@@ -215,21 +215,6 @@ class Generator(nn.Module):
             nn.Conv3d(2 * self.nf, 2 * self.nf, (kz[6], 3, 3), 1, dyx[0], dilation=dyx[0], bias=self.use_bias),
             nn.LeakyReLU(0.2, True),
             nn.BatchNorm3d(2 * self.nf),
-            nn.Conv3d(2 * self.nf, 2 * self.nf, (kz[7], 3, 3), 1, dyx[1], dilation=dyx[1], bias=self.use_bias),
-            nn.LeakyReLU(0.2, True),
-            nn.BatchNorm3d(2 * self.nf),
-            nn.Conv3d(2 * self.nf, 2 * self.nf, (kz[8], 3, 3), 1, dyx[2], dilation=dyx[2], bias=self.use_bias),
-            nn.LeakyReLU(0.2, True),
-            nn.BatchNorm3d(2 * self.nf),
-            nn.Conv3d(2 * self.nf, 2 * self.nf, (kz[9], 3, 3), 1, dyx[3], dilation=dyx[3], bias=self.use_bias),
-            nn.LeakyReLU(0.2, True),
-            nn.BatchNorm3d(2 * self.nf),
-            nn.Conv3d(2 * self.nf, 2 * self.nf, (kz[10], 3, 3), 1, 1, bias=self.use_bias),
-            nn.LeakyReLU(0.2, True),
-            nn.BatchNorm3d(2 * self.nf),
-            nn.Conv3d(2 * self.nf, 2 * self.nf, (kz[11], 3, 3), 1, 1, bias=self.use_bias),
-            nn.LeakyReLU(0.2, True),
-            nn.BatchNorm3d(2 * self.nf),
         )
         # up
         self.geo_2 = torch.nn.Sequential(
@@ -255,8 +240,8 @@ class Generator(nn.Module):
             nn.BatchNorm3d(self.nf // 2),
             torch.nn.Conv3d(self.nf // 2, 1, (kz[12], 3, 3), 1, 1, bias=self.use_bias)
         )
-        # === coarse net ===
-        self.color_0 = nn.Sequential(
+        # === encoder ===
+        self.encoder_0 = nn.Sequential(
             nn.Conv3d(nf_in_color, self.nf, (kz[0], 5, 5), 1, 2, bias=self.use_bias),
             nn.LeakyReLU(0.2, True),
             nn.BatchNorm3d(self.nf),
@@ -267,16 +252,16 @@ class Generator(nn.Module):
             nn.LeakyReLU(0.2, True),
             nn.BatchNorm3d(2 * self.nf)
         )
-        self.color_0_geo = None
+        self.encoder_geo = None
         if self.pass_geo_feats:
-            self.color_0_geo = nn.Sequential(
+            self.encoder_geo = nn.Sequential(
                 nn.Conv3d(self.nf, self.nf, (kz[1], 4, 4), 2, 1, bias=self.use_bias),
                 nn.LeakyReLU(0.2, True),
                 nn.BatchNorm3d(self.nf),
             )
         nf1 = 2 * self.nf if not self.pass_geo_feats else 3 * self.nf
-        nf_factor = 6
-        self.color_1 = nn.Sequential(
+        nf_factor = 5
+        self.encoder_1 = nn.Sequential(
             nn.Conv3d(nf1, nf_factor * self.nf, (kz[3], 4, 4), 2, 1, bias=self.use_bias),
             nn.LeakyReLU(0.2, True),
             nn.BatchNorm3d(nf_factor * self.nf),
@@ -286,230 +271,73 @@ class Generator(nn.Module):
             nn.Conv3d(nf_factor * self.nf, nf_factor * self.nf, (kz[5], 3, 3), 1, 1, bias=self.use_bias),
             nn.LeakyReLU(0.2, True),
             nn.BatchNorm3d(nf_factor * self.nf),
-            nn.Conv3d(nf_factor * self.nf, nf_factor * self.nf, (kz[6], 3, 3), 1, dyx[0], dilation=dyx[0],
-                      bias=self.use_bias),
-            nn.LeakyReLU(0.2, True),
-            nn.BatchNorm3d(nf_factor * self.nf),
-            # nn.Conv3d(nf_factor * self.nf, nf_factor * self.nf, (kz[7], 3, 3), 1, dyx[1], dilation=dyx[1],
-            #           bias=self.use_bias),
-            # nn.LeakyReLU(0.2, True),
-            # nn.BatchNorm3d(nf_factor * self.nf),
-            # nn.Conv3d(nf_factor * self.nf, nf_factor * self.nf, (kz[8], 3, 3), 1, dyx[2], dilation=dyx[2],
-            #           bias=self.use_bias),
-            # nn.LeakyReLU(0.2, True),
-            # nn.BatchNorm3d(nf_factor * self.nf),
-            # nn.Conv3d(nf_factor * self.nf, nf_factor * self.nf, (kz[9], 3, 3), 1, dyx[3], dilation=dyx[3],
-            #           bias=self.use_bias),
-            # nn.LeakyReLU(0.2, True),
-            # nn.BatchNorm3d(nf_factor * self.nf),
-            # nn.Conv3d(nf_factor * self.nf, nf_factor * self.nf, (kz[10], 3, 3), 1, 1, bias=self.use_bias),
-            # nn.LeakyReLU(0.2, True),
-            # nn.BatchNorm3d(nf_factor * self.nf),
-            # nn.Conv3d(nf_factor * self.nf, nf_factor * self.nf, (kz[11], 3, 3), 1, 1, bias=self.use_bias),
-            # nn.LeakyReLU(0.2, True),
-            # nn.BatchNorm3d(nf_factor * self.nf),
         )
         # up for color prediction
-        self.color_2 = torch.nn.Sequential(
+        self.decoder_2 = torch.nn.Sequential(
             torch.nn.Conv3d(nf_factor * self.nf, 2 * self.nf, 3, 1, 1, bias=self.use_bias),
             nn.LeakyReLU(0.2, True),
             nn.BatchNorm3d(2 * self.nf),
             torch.nn.Conv3d(2 * self.nf, 2 * self.nf, (kz[12], 3, 3), 1, 1, bias=self.use_bias),
             nn.LeakyReLU(0.2, True),
-            nn.BatchNorm3d(2 * self.nf)
-        )
-        self.color_3 = torch.nn.Sequential(
-            torch.nn.Conv3d(2 * self.nf, self.nf, 3, 1, 1, bias=self.use_bias),
-            nn.LeakyReLU(0.2, True),
-            nn.BatchNorm3d(self.nf),
-            torch.nn.Conv3d(self.nf, self.nf // 2, (kz[12], 3, 3), 1, 1, bias=self.use_bias),
-            nn.LeakyReLU(0.2, True),
-            nn.BatchNorm3d(self.nf // 2),
-            torch.nn.Conv3d(self.nf // 2, 3, (kz[12], 3, 3), 1, 1, bias=self.use_bias)
-        )
-
-        # nfr = self.nf//2
-        nfr = min(8, self.nf // 2) if self.nf > 8 else min(6, self.nf // 2)
-        print('nf_factor = %d' % nf_factor)
-        print('nfr = %d' % nfr)
-        d = max(max_dilation, 2)
-        nfr0 = nf_in_color
-        self.refine_color_0 = nn.Sequential(
-            nn.Conv3d(nfr0, nfr, 5, 1, 2, bias=self.use_bias),
-            nn.LeakyReLU(0.2, True),
-            nn.BatchNorm3d(nfr),
-            nn.Conv3d(nfr, nfr, 3, 1, padding=d, dilation=d, bias=self.use_bias),
-            nn.LeakyReLU(0.2, True),
-            nn.BatchNorm3d(nfr)
-        )
-        d = max(max_dilation, 4)
-        if self.nf <= 8:
-            self.refine_color_1 = nn.Sequential(
-                nn.Conv3d(nfr, 2 * nfr, 3, 1, padding=d, dilation=d, bias=self.use_bias),
-                nn.LeakyReLU(0.2, True),
-                nn.BatchNorm3d(2 * nfr),
-                nn.Conv3d(2 * nfr, nf_factor * nfr, 3, 1, 1, bias=self.use_bias),
-                nn.LeakyReLU(0.2, True),
-                nn.BatchNorm3d(nf_factor * nfr),
-                nn.Conv3d(nf_factor * nfr, nf_factor * nfr, 3, 1, 1, bias=self.use_bias),
-                nn.LeakyReLU(0.2, True),
-                nn.BatchNorm3d(nf_factor * nfr),
-                nn.Conv3d(nf_factor * nfr, nf_factor * nfr, 3, 1, dyx[4], dilation=dyx[4], bias=self.use_bias),
-                nn.LeakyReLU(0.2, True),
-                nn.BatchNorm3d(nf_factor * nfr),
-                nn.Conv3d(nf_factor * nfr, nf_factor * nfr, 3, 1, dyx[5], dilation=dyx[5], bias=self.use_bias),
-                nn.LeakyReLU(0.2, True),
-                nn.BatchNorm3d(nf_factor * nfr),
-                nn.Conv3d(nf_factor * nfr, nf_factor * nfr, 3, 1, 1, bias=self.use_bias),
-                nn.LeakyReLU(0.2, True),
-                nn.BatchNorm3d(nf_factor * nfr)
-            )
-        else:
-            self.refine_color_1 = nn.Sequential(
-                nn.Conv3d(nfr, 2 * nfr, 3, 1, padding=d, dilation=d, bias=self.use_bias),
-                nn.LeakyReLU(0.2, True),
-                nn.BatchNorm3d(2 * nfr),
-                nn.Conv3d(2 * nfr, nf_factor * nfr, 3, 1, 1, bias=self.use_bias),
-                nn.LeakyReLU(0.2, True),
-                nn.BatchNorm3d(nf_factor * nfr),
-                nn.Conv3d(nf_factor * nfr, nf_factor * nfr, 3, 1, 1, bias=self.use_bias),
-                nn.LeakyReLU(0.2, True),
-                nn.BatchNorm3d(nf_factor * nfr),
-                nn.Conv3d(nf_factor * nfr, nf_factor * nfr, 3, 1, 1, bias=self.use_bias),
-                nn.LeakyReLU(0.2, True),
-                nn.BatchNorm3d(nf_factor * nfr),
-                nn.Conv3d(nf_factor * nfr, nf_factor * nfr, 3, 1, dyx[4], dilation=dyx[4], bias=self.use_bias),
-                nn.LeakyReLU(0.2, True),
-                nn.BatchNorm3d(nf_factor * nfr),
-                nn.Conv3d(nf_factor * nfr, nf_factor * nfr, 3, 1, dyx[5], dilation=dyx[5], bias=self.use_bias),
-                nn.LeakyReLU(0.2, True),
-                nn.BatchNorm3d(nf_factor * nfr),
-                nn.Conv3d(nf_factor * nfr, nf_factor * nfr, 3, 1, dyx[6], dilation=dyx[6], bias=self.use_bias),
-                nn.LeakyReLU(0.2, True),
-                nn.BatchNorm3d(nf_factor * nfr),
-                nn.Conv3d(nf_factor * nfr, nf_factor * nfr, 3, 1, dyx[7], dilation=dyx[7], bias=self.use_bias),
-                nn.LeakyReLU(0.2, True),
-                nn.BatchNorm3d(nf_factor * nfr),
-                nn.Conv3d(nf_factor * nfr, nf_factor * nfr, 3, 1, 1, bias=self.use_bias),
-                nn.LeakyReLU(0.2, True),
-                nn.BatchNorm3d(nf_factor * nfr),
-                nn.Conv3d(nf_factor * nfr, nf_factor * nfr, 3, 1, 1, bias=self.use_bias),
-                nn.LeakyReLU(0.2, True),
-                nn.BatchNorm3d(nf_factor * nfr),
-            )
-
-        self.refine_color_2 = nn.Sequential(
-            nn.Conv3d(nf_factor * nfr, 2 * nfr, 3, 1, 1, bias=self.use_bias),
-            nn.LeakyReLU(0.2, True),
-            nn.BatchNorm3d(2 * nfr),
-            nn.Conv3d(2 * nfr, 2 * nfr, 3, 1, 1, bias=self.use_bias),
-            nn.LeakyReLU(0.2, True),
-            nn.BatchNorm3d(2 * nfr),
-        )
-        self.refine_color_3 = nn.Sequential(
-            nn.Conv3d(2 * nfr, nfr, 3, 1, 1, bias=self.use_bias),
-            nn.LeakyReLU(0.2, True),
-            nn.BatchNorm3d(nfr),
-            nn.Conv3d(nfr, nfr // 2, 3, 1, 1, bias=self.use_bias),
-            nn.LeakyReLU(0.2, True),
-            nn.BatchNorm3d(nfr // 2),
-            nn.Conv3d(nfr // 2, 3, 1, 1, 0, bias=self.use_bias)
-        )
-        # up for semantic prediction
-        
-        # === coarse semantics ===
-        self.sem_0 = nn.Sequential(
-            nn.Conv3d(nf_in_color, self.nf, (kz[0], 5, 5), 1, 2, bias=self.use_bias),
-            nn.LeakyReLU(0.2, True),
-            nn.BatchNorm3d(self.nf),
-            nn.Conv3d(self.nf, 2 * self.nf, (kz[1], 4, 4), 2, 1, bias=self.use_bias),
+            nn.BatchNorm3d(2 * self.nf),
+            torch.nn.Conv3d(2 * self.nf, 2 * self.nf, (kz[12], 3, 3), 1, 1, bias=self.use_bias),
             nn.LeakyReLU(0.2, True),
             nn.BatchNorm3d(2 * self.nf),
-            nn.Conv3d(2 * self.nf, 2 * self.nf, (kz[2], 3, 3), 1, 1, bias=self.use_bias),
-            nn.LeakyReLU(0.2, True),
-            nn.BatchNorm3d(2 * self.nf)
         )
-        self.sem_0_geo = None
-        if self.pass_geo_feats:
-            self.sem_0_geo = nn.Sequential(
-                nn.Conv3d(self.nf, self.nf, (kz[1], 4, 4), 2, 1, bias=self.use_bias),
-                nn.LeakyReLU(0.2, True),
-                nn.BatchNorm3d(self.nf),
-            )
-            
-        sem_dilation = 4
-        sem_factor = 2 #TODO use it in encoding
-        self.sem_1 = nn.Sequential(
-            nn.Conv3d(nf1, nf_factor * self.nf, (kz[3], 4, 4), 2, 1, bias=self.use_bias),
+        self.decoder_3 = torch.nn.Sequential(
+            torch.nn.Conv3d(5 * self.nf, 2 * self.nf, 3, 1, 1, bias=self.use_bias),
             nn.LeakyReLU(0.2, True),
-            nn.BatchNorm3d(nf_factor * self.nf),
-            nn.Conv3d(nf_factor * self.nf, nf_factor * self.nf, (kz[4], 3, 3), 1, 1, bias=self.use_bias),
+            nn.BatchNorm3d(2 * self.nf),
+            torch.nn.Conv3d(2 * self.nf, 2 * self.nf, 3, 1, 1, bias=self.use_bias),
             nn.LeakyReLU(0.2, True),
-            nn.BatchNorm3d(nf_factor * self.nf),
-            nn.Conv3d(nf_factor * self.nf, nf_factor * self.nf, (kz[5], 3, 3), 1, 1, bias=self.use_bias),
+            nn.BatchNorm3d(2 * self.nf),
+            torch.nn.Conv3d(2 * self.nf, self.nf, (kz[12], 3, 3), 1, 1, bias=self.use_bias),
             nn.LeakyReLU(0.2, True),
-            nn.BatchNorm3d(nf_factor * self.nf),
-            nn.Conv3d(nf_factor * self.nf, nf_factor * self.nf, (kz[6], 3, 3), 1, dyx[0], dilation=dyx[0],
-                      bias=self.use_bias),
+            nn.BatchNorm3d(self.nf),
+            torch.nn.Conv3d(self.nf, self.nf, (kz[12], 3, 3), 1, 1, bias=self.use_bias),
             nn.LeakyReLU(0.2, True),
-            nn.BatchNorm3d(nf_factor * self.nf),
-            # nn.Conv3d(nf_factor * self.nf, nf_factor * self.nf, (kz[7], 3, 3), 1, dyx[1], dilation=dyx[1],
-            #           bias=self.use_bias),
-            # nn.LeakyReLU(0.2, True),
-            # nn.BatchNorm3d(nf_factor * self.nf),
-            # nn.Conv3d(nf_factor * self.nf, nf_factor * self.nf, (kz[8], 3, 3), 1, dyx[2], dilation=dyx[2],
-            #           bias=self.use_bias),
-            # nn.LeakyReLU(0.2, True),
-            # nn.BatchNorm3d(nf_factor * self.nf),
-            # nn.Conv3d(nf_factor * self.nf, nf_factor * self.nf, (kz[9], 3, 3), 1, dyx[3], dilation=dyx[3],
-            #           bias=self.use_bias),
-            # nn.LeakyReLU(0.2, True),
-            # nn.BatchNorm3d(nf_factor * self.nf),
-            # nn.Conv3d(nf_factor * self.nf, nf_factor * self.nf, (kz[10], 3, 3), 1, 1, bias=self.use_bias),
-            # nn.LeakyReLU(0.2, True),
-            # nn.BatchNorm3d(nf_factor * self.nf),
-            # nn.Conv3d(nf_factor * self.nf, nf_factor * self.nf, (kz[11], 3, 3), 1, 1, bias=self.use_bias),
-            # nn.LeakyReLU(0.2, True),
-            # nn.BatchNorm3d(nf_factor * self.nf),
+            nn.BatchNorm3d(self.nf),
+            torch.nn.Conv3d(self.nf, self.nf, (kz[12], 3, 3), 1, 1, bias=self.use_bias),
         )
 
-        self.sem_2 = nn.Sequential(
-            nn.Conv3d(nf_factor * self.nf, sem_factor * self.nf, 3, 1, 1, bias=self.use_bias),
+        self.color_head = nn.Sequential(
+            nn.BatchNorm3d(self.nf + nf_in_color + 1),
             nn.LeakyReLU(0.2, True),
-            nn.BatchNorm3d(sem_factor * self.nf),
-            nn.Conv3d(sem_factor * self.nf, sem_factor * self.nf, 3, 1, 1, bias=self.use_bias),
+            nn.Conv3d(self.nf + nf_in_color + 1, self.nf, 3, 1, 1, bias=self.use_bias),
             nn.LeakyReLU(0.2, True),
-            nn.BatchNorm3d(sem_factor * self.nf),
+            nn.BatchNorm3d(self.nf),
+            nn.Conv3d(self.nf, self.nf // 2, 3, 1, 1, bias=self.use_bias),
+            nn.LeakyReLU(0.2, True),
+            nn.BatchNorm3d(self.nf // 2),
+            nn.Conv3d(self.nf // 2, 3, 3, 1, 1, bias=self.use_bias)
         )
 
-        self.sem_3 = nn.Sequential(
-            nn.Conv3d(sem_factor * self.nf, sem_factor * self.n_classes, 3, 1, 1, bias=self.use_bias),
+        self.semantic_head = nn.Sequential(
+            nn.BatchNorm3d(self.nf + nf_in_color + 1),
             nn.LeakyReLU(0.2, True),
-            nn.BatchNorm3d(sem_factor * self.n_classes),
-            # nn.Conv3d(sem_factor*3//2 * self.n_classes, sem_factor * self.n_classes, 3, 1, 1, bias=self.use_bias),
-            # nn.LeakyReLU(0.2, True),
-            # nn.BatchNorm3d(sem_factor * self.n_classes),
-            nn.Conv3d(sem_factor * self.n_classes, self.n_classes, (kz[12], 3, 3), 1, 1, bias=self.use_bias)
+            nn.Conv3d(self.nf + nf_in_color + 1, self.nf, 3, 1, 1, bias=self.use_bias),
+            nn.LeakyReLU(0.2, True),
+            nn.BatchNorm3d(self.nf),
+            nn.Conv3d(self.nf, self.nf, 3, 1, 1, bias=self.use_bias),
+            nn.LeakyReLU(0.2, True),
+            nn.BatchNorm3d(self.nf),
+            nn.Conv3d(self.nf, self.n_classes, 3, 1, 1, bias=self.use_bias)
         )
 
         num_params_geo = count_num_model_params(self.geo_0) + count_num_model_params(
             self.geo_1) + count_num_model_params(self.geo_2) + count_num_model_params(
             self.geo_occ) + count_num_model_params(self.geo_3)
-        num_params_color_coarse = count_num_model_params(self.color_0) + count_num_model_params(
-            self.color_1) + count_num_model_params(self.color_2) + count_num_model_params(self.color_3)
-        num_params_color_refine = count_num_model_params(self.refine_color_0) + count_num_model_params(
-            self.refine_color_1) + count_num_model_params(self.refine_color_2) + count_num_model_params(
-            self.refine_color_3)
-        num_params_sem_coarse = count_num_model_params(self.sem_0) + count_num_model_params(
-            self.sem_1) + count_num_model_params(self.sem_2)
-        num_params_sem = count_num_model_params(self.sem_3)
-        
+        num_params_encoder = count_num_model_params(self.encoder_0) + count_num_model_params(self.encoder_1)
+        num_params_decoder = count_num_model_params(self.decoder_2) + count_num_model_params(self.decoder_3)
+        num_params_color_head = count_num_model_params(self.color_head)
+        num_params_semantic_head = count_num_model_params(self.semantic_head)
+
         print('#params(geo) = ', num_params_geo)
-        print('#params(color coarse) = ', num_params_color_coarse)
-        print('#params(color) = ', num_params_color_refine)
-        print('#params(sem coarse) = ', num_params_sem_coarse)
-        print('#params(sem) = ', num_params_sem)
-        print('#params(total) = ', num_params_color_coarse + num_params_color_refine + num_params_geo + num_params_sem)
+        print('#params(encoder) = ', num_params_encoder)
+        print('#params(decoder) = ', num_params_decoder)
+        print('#params(color head) = ', num_params_color_head)
+        print('#params(semantic head) = ', num_params_semantic_head)
+        print('#params(total) = ', num_params_geo + num_params_encoder + num_params_decoder + num_params_color_head + num_params_semantic_head)
 
     def update_sizes(self, input_max_dim):
         self.max_data_size = input_max_dim
@@ -533,53 +361,36 @@ class Generator(nn.Module):
         out_occ = self.geo_occ(geo)
         out_sdf = self.geo_3(geo)
 
-        
-        if pred_color or pred_semantic: #prepare inputs
+        out_color = None
+        out_semantic = None
+        if pred_color or pred_semantic:
             x_color = x[:, 1:4, :, :, :]
             x_color = x_color * 2 - 1
-
-        out_color = None
-        if pred_color:
             if self.input_mask:
                 masked_x = x_color * (1 - mask) + mask
-                encoded = self.color_0(torch.cat((masked_x, mask), dim=1))
+                encoded_half = self.encoder_0(torch.cat((masked_x, mask), dim=1))
             else:
-                encoded = self.color_0(x_color)
+                encoded_half = self.encoder_0(x_color)
             if self.pass_geo_feats:
-                pass_geo = self.color_0_geo(geo)
-                encoded = torch.cat((encoded, pass_geo), dim=1)
-            encoded = self.color_1(encoded)
-            encoded = nn.functional.interpolate(encoded, scale_factor=scale_factor, mode=self.interpolate_mode)
-            color = self.color_2(encoded)
-            color = nn.functional.interpolate(color, scale_factor=scale_factor, mode=self.interpolate_mode)
-            color = self.color_3(color)
-            color = torch.clamp(color, -1., 1.)
+                pass_geo = self.encoder_geo(geo)
+                encoded_half = torch.cat((encoded_half, pass_geo), dim=1)
+            encoded = self.encoder_1(encoded_half)
+            decoded = nn.functional.interpolate(encoded, scale_factor=scale_factor, mode=self.interpolate_mode)
+            decoded = self.decoder_2(decoded)
 
-            if self.input_mask:
-                masked_x = x_color * (1 - mask) + color * mask
-                color = self.refine_color_0(torch.cat((masked_x, mask), dim=1))
-            else:
-                color = self.refine_color_0(color)
-            color = self.refine_color_1(color)
-            color = self.refine_color_2(color)
-            out_color = self.refine_color_3(color)
-            out_color = torch.clamp(out_color, -1., 1.)
+            decoded = torch.cat((decoded, encoded_half), dim=1)
+            decoded = nn.functional.interpolate(decoded, scale_factor=scale_factor, mode=self.interpolate_mode)
+            decoded = self.decoder_3(decoded)
+            decoded = torch.cat((decoded, x), dim=1)
+        
+            if pred_color:
+                # if self.input_mask:
+                #     masked_x = x_color * (1 - mask) + color * mask
+                #     color = self.refine_color_0(torch.cat((masked_x, mask), dim=1))
+                color = self.color_head(decoded)
+                out_color = torch.clamp(color, -1., 1.)
 
-        out_semantic = None
-        if pred_semantic:
-            if self.input_mask:
-                masked_x = x_color * (1 - mask) + mask
-                encoded_sem = self.sem_0(torch.cat((masked_x, mask), dim=1))
-            else:
-                encoded_sem = self.sem_0(x_color)
-            if self.pass_geo_feats:
-                pass_geo_sem = self.sem_0_geo(geo)
-                encoded_sem = torch.cat((encoded_sem, pass_geo_sem), dim=1)
-            encoded_sem = self.sem_1(encoded_sem)
-            encoded_sem = nn.functional.interpolate(encoded_sem, scale_factor=scale_factor, mode=self.interpolate_mode)
-
-            out_semantic = self.sem_2(encoded_sem)
-            out_semantic = nn.functional.interpolate(out_semantic, scale_factor=scale_factor, mode=self.interpolate_mode)
-            out_semantic = self.sem_3(out_semantic)
+            if pred_semantic:
+                out_semantic = self.semantic_head(decoded)
 
         return out_occ, out_sdf, out_color, out_semantic

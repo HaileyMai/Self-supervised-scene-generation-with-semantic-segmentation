@@ -7,6 +7,7 @@ import shutil
 import random
 import torch
 import numpy as np
+import math
 import gc
 
 import data_util
@@ -70,26 +71,21 @@ class_name = np.load("category.npz")['class_name']
 mapping_color = np.load("category.npz")['mapping_color']
 
 
-def compute_intersection_union(chunk_target_sdf, output_sdf, known, chunk_target_semantic=None,
+def compute_intersection_union(chunk_target_sdf, output_occ, known, chunk_target_semantic=None,
                                output_semantic=None, class_index=None):
-    inside_target = torch.zeros(chunk_target_sdf.shape, dtype=torch.bool)
-    inside_target[torch.abs(chunk_target_sdf) < args.truncation] = True
-
-    inside_output = torch.zeros(output_sdf.shape, dtype=torch.bool)
-    inside_output[torch.abs(output_sdf) < args.truncation] = True
+    target = torch.abs(chunk_target_sdf) < args.truncation
+    pred = torch.nn.Sigmoid()(output_occ) > 0.5
 
     if chunk_target_semantic is not None and output_semantic is not None and class_index is not None:
         assert chunk_target_semantic.shape == output_semantic.shape
         mask = torch.logical_and(chunk_target_semantic != 14, known)  # ignore unlabeled or unknown voxels
-        inside_target[chunk_target_semantic != class_index] = False
-        inside_output[output_semantic != class_index] = False
+        target[chunk_target_semantic != class_index] = False
+        pred[output_semantic != class_index] = False
     else:
         mask = known
 
-    union = torch.logical_or(inside_target[mask], inside_output[mask])
-    intersection = torch.logical_and(inside_target[mask], inside_output[mask])
-    union = torch.sum(union)
-    intersection = torch.sum(intersection)
+    intersection = torch.sum(pred[mask] & target[mask])
+    union = torch.sum(pred[mask] | target[mask])
     return intersection.item(), union.item()
 
 
@@ -110,6 +106,7 @@ def test(dataloader, output_vis, num_to_vis):
         union_total = 0
         intersection_classes_total = np.zeros(model.n_classes)
         union_classes_total = np.zeros(model.n_classes)
+        class_weight_total = np.zeros(model.n_classes)
         sample_total = 0
         for t, sample in enumerate(dataloader):
             inputs = sample['input']
@@ -155,6 +152,7 @@ def test(dataloader, output_vis, num_to_vis):
             union_sum = 0
             intersection_classes_sum = np.zeros(model.n_classes)
             union_classes_sum = np.zeros(model.n_classes)
+            class_weight_sum = np.zeros(model.n_classes)
             for y in range(0, max_input_dim[1], args.stride):
                 for x in range(0, max_input_dim[2], args.stride):
                     chunk_input_mask = torch.abs(
@@ -189,11 +187,12 @@ def test(dataloader, output_vis, num_to_vis):
                     if semantics is not None:
                         output_label = torch.argmax(output_semantic, dim=1, keepdim=True)
                         for cl in range(model.n_classes):
-                            i, u = compute_intersection_union(chunk_target_sdf, output_sdf, chunk_known,
+                            i, u = compute_intersection_union(chunk_target_sdf, output_occ, chunk_known,
                                                               chunk_target_semantic, output_label, class_index=cl)
                             intersection_classes_sum[cl] += i
                             union_classes_sum[cl] += u
-                    i, u = compute_intersection_union(chunk_target_sdf, output_sdf, chunk_known)
+                            class_weight_sum[cl] += torch.sum(chunk_target_semantic == cl).item()
+                    i, u = compute_intersection_union(chunk_target_sdf, output_occ, chunk_known)
                     intersection_sum += i
                     union_sum += u
 
@@ -250,14 +249,20 @@ def test(dataloader, output_vis, num_to_vis):
                     output_sdfs[0, 0, output_locs[:, 0], output_locs[:, 1], output_locs[:, 2]] += output_sdf[1][:, 0].detach().cpu()
                     output_norms[0, 0, output_locs[:, 0], output_locs[:, 1], output_locs[:, 2]] += 1
 
+            print(f"\n**Geo IoU: {intersection_sum / union_sum:.3f}")
             if semantics is not None:
                 iou_classes = intersection_classes_sum / union_classes_sum
-                print(f"\nMean IoU of {model.n_classes} classes: ")
+                print(f"Mean IoU of {model.n_classes} classes: ")
                 for i in range(model.n_classes):
                     print(f"{class_name[i]}: {iou_classes[i]:.3f}")
+                    if math.isnan(iou_classes[i]):
+                        iou_classes[i] = 0
                 intersection_classes_total += intersection_classes_sum
                 union_classes_total += union_classes_sum
-            print(f"**Mean IoU: {intersection_sum / union_sum:.3f}")
+                class_weight_total += class_weight_sum
+                mean_IoU = (iou_classes * class_weight_sum / class_weight_sum.sum()).sum()
+                print(f"**Mean: {mean_IoU:.3f}")
+
             intersection_total += intersection_sum
             union_total += union_sum
             sample_total += 1
@@ -302,19 +307,25 @@ def test(dataloader, output_vis, num_to_vis):
 
         print("\n=========== Summary =============")
         print(f"Evaluate {sample_total} regions: ")
+        print(f"**Geo IoU: {intersection_total / union_total:.3f}")
         if semantics is not None:
             iou_classes = intersection_classes_total / union_classes_total
             print(f"Mean IoU of {model.n_classes} classes: ")
             for i in range(model.n_classes):
                 print(f"{class_name[i]}: {iou_classes[i]:.3f}")
-        print(f"**Mean IoU total: {intersection_total / union_total:.3f}")
+                if math.isnan(iou_classes[i]):
+                    iou_classes[i] = 0
+            mean_IoU = (iou_classes * class_weight_total / class_weight_total.sum()).sum()
+            print(f"**Mean: {mean_IoU:.3f}")
 
         with open(os.path.join(args.output, "IoU.txt"), "w") as f:  # TODO two columns
+            f.write(str(intersection_total / union_total))
+            f.write("\n")
             if semantics is not None:
                 np.savetxt(f, class_name, '%s', delimiter=' ')
                 np.savetxt(f, iou_classes, '%.3f', delimiter=' ')
-            f.write("\nTotal:\n")
-            f.write(str(intersection_total / union_total))
+                f.write('Mean: ')
+                f.write(str(mean_IoU))
 
     sys.stdout.write('\n')
 
@@ -342,9 +353,9 @@ def main():
     if os.path.exists(args.output):
         if args.vis_only:
             print('warning: output dir %s exists, will overwrite any existing files')
-        # else:
-        # input('warning: output dir %s exists, press key to overwrite and continue' % args.output)
-        # shutil.rmtree(args.output)
+        else:
+            input('warning: output dir %s exists, press key to overwrite and continue' % args.output)
+            shutil.rmtree(args.output)
     if not os.path.exists(args.output):
         os.makedirs(args.output)
     output_vis_path = os.path.join(args.output, 'vis')
