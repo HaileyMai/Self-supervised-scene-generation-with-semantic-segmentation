@@ -4,10 +4,12 @@ This repository contains an extension of the paper
 [SPSG: Self-Supervised Photometric Scene Generation from RGB-D Scans](https://arxiv.org/pdf/2006.14660).
 SPSG introduces a self-supervised approach to generate high-quality, colored 3D models of scenes from RGB-D scan observations by learning to infer unobserved scene geometry and color. 
 Rather than relying on 3D reconstruction losses to inform 3D geometry and color reconstruction, it proposes adversarial and perceptual losses operating on 2D renderings in order to achieve high-resolution, high-quality colored reconstructions of scenes.
+
 We extended the available code to be able to predict semantic information.
 The semantic predictions are trained using a semantic loss either operating on 2D renderings or simply the 3D semantics.
 There are scripts available to extend the data used by SPSG with semantic information, namely [extend_sdfs.py](torch/extend_sdfs.py) and [extend_sdfs_2cm.py](torch/extend_sdfs_2cm.py).
 
+![Model Structure](model.png)
 
 ## Code
 ### Installation:  
