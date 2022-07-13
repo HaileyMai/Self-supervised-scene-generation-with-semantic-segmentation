@@ -166,9 +166,10 @@ if __name__ == "__main__":
     parser.add_argument("--output_dir", type=str, default=".", help="where to write the extended .sdf files")
     parser.add_argument("--output_vis_dir", type=str, default=None, help="where to write the color and sem meshes")
     parser.add_argument("--truncation", type=float, default=3, help="truncation in voxels")
-    parser.add_argument("--samples_per_face", type=int, default=8,
+    parser.add_argument("--samples_per_face", type=int, default=4,
                         help="how many points are sampled from every face in average")
     parser.add_argument("--max_scenes", type=int, default=None, help="set maximum number of scenes processed")
+    parser.add_argument("--max_vis", type=int, default=1, help="set maximum number of scenes to visualize")
 
     args = parser.parse_args()
     print(args)
@@ -178,7 +179,6 @@ if __name__ == "__main__":
 
     mapping_table = pd.read_csv(args.mapping, sep="\t")[["count", "eigen13id", "eigen13class", "mpcat40index"]]
     raw_index = np.array(mapping_table["eigen13id"])
-    raw_index[mapping_table["mpcat40index"] == 41] = 14
     raw_index = np.concatenate((np.array([0]), raw_index), axis=-1)
     count = np.array(mapping_table[["count", "eigen13id"]].groupby("eigen13id").sum())
     count[7] -= mapping_table["count"][mapping_table["mpcat40index"] == 41].sum()
@@ -204,7 +204,6 @@ if __name__ == "__main__":
         os.makedirs(args.output_vis_dir)
 
     num_scenes = 0
-    class_weight = []
     for segmentation in listdir(seg_dir):
         if args.max_scenes is not None and args.max_scenes <= num_scenes:
             print("Max number of scenes reached, done.")
@@ -214,8 +213,8 @@ if __name__ == "__main__":
             print(f"{segmentation} already exists, skipping.")
             continue
         
-        #Check before parsing ply's to avoid unnecessary processing.
-        sdf_paths = glob.glob(os.path.join(args.sdf_path, str(segmentation) + '*cmp*'))
+        # Check before parsing ply's to avoid unnecessary processing.
+        sdf_paths = glob.glob(os.path.join(args.sdf_path, segmentation + '*cmp*'))
         if len(sdf_paths) == 0:
             print(f"Found no sdf files for {segmentation}, skipping.")
             continue
@@ -241,7 +240,7 @@ if __name__ == "__main__":
         print(f"Sampling points ...")
         region_sampled_points, region_sampled_cat = None, None
         while path.exists(path.join(ply_dir, "region" + str(region) + ".ply")):
-            #print(f"-region {region}")
+            # print(f"-region {region}")
 
             ply_path = path.join(ply_dir, "region" + str(region) + ".ply")
             sampled_points, sampled_cat = sample_util.sample_from_region_ply(ply_path, num=args.samples_per_face)
@@ -261,11 +260,16 @@ if __name__ == "__main__":
         took = time.time() - start
         print(f"Processed {region} regions, sampled {region_sampled_points.shape[0]} points, took {took:.3f} s.")
 
+        if args.output_vis_dir is not None and num_scenes < args.max_vis:
+            output_vis_dir = args.output_vis_dir
+        else:
+            output_vis_dir = None
+
         # add valid points to corresponding sdf file(s)
         start = time.time()
         with ThreadPoolExecutor(max_workers=4) as executor:
             future_dict = {
-                executor.submit(extend_sdf_file, segmentation, sdf_file, args.output_dir, args.output_vis_dir,
+                executor.submit(extend_sdf_file, segmentation, sdf_file, args.output_dir, output_vis_dir,
                                 region_sampled_points, region_sampled_cat, raw_index): sdf_file for sdf_file in sdf_paths}
 
             for future in as_completed(future_dict):

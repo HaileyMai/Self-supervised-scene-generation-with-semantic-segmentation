@@ -48,20 +48,21 @@ parser.add_argument('--no_loss_masking', dest='use_loss_masking', action='store_
 parser.add_argument('--truncation', type=float, default=3, help='truncation in voxels')
 parser.add_argument('--batch_size', type=int, default=2, help='input batch size')
 parser.add_argument('--start_epoch', type=int, default=0, help='start epoch')
-parser.add_argument('--max_epoch', type=int, default=15, help='number of epochs to train for')
+parser.add_argument('--max_epoch', type=int, default=10, help='number of epochs to train for')
 parser.add_argument('--save_epoch', type=int, default=1, help='save every nth epoch')
-parser.add_argument('--lr', type=float, default=0.0005, help='learning rate, default=0.0001')
+parser.add_argument('--lr', type=float, default=0.0001, help='learning rate, default=0.0001')
 parser.add_argument('--d_lr_factor', type=float, default=4, help='lr disc = d_lr_factor*lr')
 parser.add_argument('--weight_decay', type=float, default=0.0, help='weight decay.')
-parser.add_argument('--num_iters_geo_only', type=int, default=500, help='#iters to train geo before introducing color')
+parser.add_argument('--num_iters_geo_only', type=int, default=1000, help='#iters to train geo before introducing color')
 parser.add_argument('--num_iters_before_content', type=int, default=60000,
                     help='#iters to train geo before introducing color')
 parser.add_argument('--weight_occ_loss', type=float, default=1.0, help='weight geo loss vs rest (0 to disable).')
 parser.add_argument('--weight_depth_loss', type=float, default=1.0, help='weight geo loss vs rest (0 to disable).')
 parser.add_argument('--weight_sdf_loss', type=float, default=0.1, help='weight geo loss vs rest (0 to disable).')
-parser.add_argument('--weight_color_loss', type=float, default=0.0, help='weight color loss vs rest (0 to disable).')
+parser.add_argument('--weight_color_loss', type=float, default=1.0, help='weight color loss vs rest (0 to disable).')
 parser.add_argument('--weight_semantic_loss', type=float, default=0.1,
                     help='weight semantic loss vs rest (0 to disable).')
+parser.add_argument('--pred_3d_semantic', type=bool, default=True, help='predict 3d or 2d semantics')
 parser.add_argument('--color_thresh', type=int, default=15, help='mask colors with all values < color_thresh')
 parser.add_argument('--start_iter', type=int, default=0, help='start iteration')
 parser.add_argument('--color_truncation', type=float, default=0, help='truncation in voxels for color')
@@ -89,8 +90,8 @@ parser.add_argument('--subsample_tgt2d_factor', type=int, default=1, help='heigh
 parser.add_argument('--max_depth_fill_iters', type=int, default=40,
                     help='max #fill iters for depth filling (0 for no fill)')
 # adversarial part
-parser.add_argument('--weight_disc_loss', type=float, default=0.0, help='weight disc loss.')
-parser.add_argument('--weight_discgen_loss', type=float, default=0.000, help='weight disc loss.')
+parser.add_argument('--weight_disc_loss', type=float, default=0.5, help='weight disc loss.')
+parser.add_argument('--weight_discgen_loss', type=float, default=0.005, help='weight disc loss.')
 parser.add_argument('--nf_disc', type=int, default=8, help='controls #channels of discriminator')
 parser.add_argument('--nf_gen', type=int, default=20, help='controls #channels of generator')
 parser.add_argument('--no_project_targets', dest='project_targets', action='store_false')
@@ -113,10 +114,9 @@ UP_AXIS = 0
 _SPLITTER = ','
 
 print(args)
-pred_semantic_3d = True
+pred_3d_semantic = args.pred_3d_semantic and args.weight_semantic_loss > 0
 semantic_color = np.load("category.npz")['mapping_color']
 weight_semantic_class = torch.from_numpy(np.load("category.npz")['weight'].flatten()).float().cuda()
-
 
 # specify gpu
 os.environ['CUDA_VISIBLE_DEVICES'] = str(args.gpu)
@@ -737,7 +737,7 @@ def train(epoch, iter, dataloader, log_file, output_save):
                 # 3D
                 output_sem = output_semantic[target_sem.detach() < 14].clone()
                 target_sem = target_sem[target_sem.detach() < 14]
-                if pred_semantic_3d:
+                if pred_3d_semantic:
                     loss_semantic = F.cross_entropy(output_sem, target_sem, weight=weight_semantic_class)
                     train_losssemantic.append(loss_semantic.item())
                 else:  # 2D
@@ -768,7 +768,7 @@ def train(epoch, iter, dataloader, log_file, output_save):
                 synth[:, :3] = (synth[:, :3] + 1) * 0.5
                 target[:, :3] = (target[:, :3] + 1) * 0.5
 
-        output_visual = output_save and (t + 2 == num_batches or (iter > 0 and iter % 10000 == 0))
+        output_visual = output_save and (t + 2 == num_batches or (iter > 0 and iter % 1000 == 0))
 
         train_losses.append(loss.item())
         iter += 1
@@ -1186,7 +1186,7 @@ def test(epoch, iter, dataloader, log_file, output_save):
                     # 3D
                     output_sem = output_semantic[target_sem.detach() < 14].clone()
                     target_sem = target_sem[target_sem.detach() < 14]
-                    if pred_semantic_3d:
+                    if pred_3d_semantic:
                         loss_semantic = F.cross_entropy(output_sem, target_sem, weight=weight_semantic_class)
                         val_losssemantic.append(loss_semantic.item())
                     else:  # 2D
